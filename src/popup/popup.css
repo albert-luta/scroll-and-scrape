@@ -1,0 +1,8 @@
+button[name='scroll'][value='y'] {
+	background: royalblue;
+	color: white;
+}
+
+button[name='scroll'][value='n'] {
+	background: lightcoral;
+}
