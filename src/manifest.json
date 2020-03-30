@@ -12,5 +12,10 @@
 		"default_icon": "assets/toolbar-icon.png",
 		"default_popup": "popup/index.html",
 		"default_title": "Scroll and scrape"
+	},
+	"icons": {
+		"16": "assets/toolbar-icon.png",
+		"48": "assets/toolbar-icon.png",
+		"128": "assets/toolbar-icon.png"
 	}
 }
