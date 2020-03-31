@@ -1,5 +1,20 @@
 'use strict';
 
+const selectors = {
+	feed: '._5pcb[aria-label="News Feed"][role="region"]',
+	posts: '._4-u2.mbm._4mrt._5jmm._5pat._5v3q._7cqq._4-u8',
+	date: '._5ptz .timestampContent',
+	author: '.fwb a',
+	text: '._5pbx.userContent._3576',
+	likes: '._81hb',
+	comments: '._3hg-._42ft'
+};
+
+// in loc de setInterval, incearca sa faci totul sincron(sa astepte dupa manipularea mutationRecords), cel mai probabil cu while(conditie), conditie pe care o vei schimba la sfarsitul while-ului, dupa manipularea de date(datele noi primite)
+// in state 1 prop cu conditia(boolean)
+// *lasa in continuare isActive, pentru a da toggle
+// in state 1 prop care tine "ultimul"(cel mai aproape de momentul curent) timestamp, dupa care calculezi conditia
+// daca nu exista un ultim timestamp(e prima oara cand dan scraping grupului), dai fallback spre {{ new Date().setDate(new Date().getDate() - 30) }}
 const state = {
 	isActive: false,
 	scroll: {
@@ -10,23 +25,23 @@ const state = {
 		data: {
 			posts: [],
 			mutationRecords: []
-		},
-		selectors: {
-			feed: '._5pcb[aria-label="News Feed"][role="region"]',
-			posts: '._4-u2.mbm._4mrt._5jmm._5pat._5v3q._7cqq._4-u8',
-			author: '.fwb a',
-			likes: '._81hb',
-			comments: {
-				number: '._3hg-._42ft'
-			}
 		}
 	}
 };
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-	if (request.toggleScrollAndScrape) {
-		toggleScrollAndScrape(state);
+	// if (request.toggleScrollAndScrape) {
+	// 	toggleScrollAndScrape(state);
+	// }
+	if (request.error) {
+		console.warn('Scroll and scrape:', request.error);
+	} else {
+		console.log('This is a fb group');
 	}
+
+	// if (request.toggleScrollAndScrape) {
+	// 	toggleScrollAndScrape(state);
+	// }
 });
 
 function toggleScrollAndScrape(state) {
@@ -54,7 +69,7 @@ function stop(state) {
 }
 
 function startScrolling(scroll) {
-	let scrollPosition = window.pageYOffset;
+	let scrollPosition = 0; // window.pageYOffset
 	scroll.interval = setInterval(() => {
 		if (scrollPosition < document.body.clientHeight - window.innerHeight) {
 			scrollPosition = document.body.clientHeight - window.innerHeight;
@@ -71,9 +86,9 @@ function stopScrolling(scroll) {
 }
 
 function startScraping(scrape) {
-	const feed = document.querySelector(scrape.selectors.feed);
+	const feed = document.querySelector(selectors.feed);
 	if (!scrape.observer) {
-		scrape.data.posts = Array.from(feed.querySelectorAll(scrape.selectors.posts)).filter(
+		scrape.data.posts = Array.from(feed.querySelectorAll(selectors.posts)).filter(
 			(post) => post.id.split('_')[2][0] !== ':'
 		);
 
@@ -86,7 +101,9 @@ function startScraping(scrape) {
 }
 
 function observeNewPosts(mutationList) {
+	state.scrape.data.mutationRecords;
 	mutationList.forEach((mutation) => state.scrape.data.mutationRecords.push(mutation));
+	console.log(mutationList);
 }
 
 function stopScraping(scrape) {
