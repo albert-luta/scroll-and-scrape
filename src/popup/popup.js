@@ -1,7 +1,7 @@
-const toggleScroll = document.querySelector('button[name="toggle-scroll"]');
+const toggleScrollAndScrape = document.querySelector('button[name="toggle-scroll-and-scrape"]');
 
-toggleScroll.addEventListener('click', () => {
+toggleScrollAndScrape.addEventListener('click', () => {
 	chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-		chrome.tabs.sendMessage(tabs[0].id, { toggleScroll: true });
+		chrome.tabs.sendMessage(tabs[0].id, { toggleScrollAndScrape: true });
 	});
 });
