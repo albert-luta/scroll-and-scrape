@@ -13,6 +13,7 @@
 		"default_popup": "popup/index.html",
 		"default_title": "Scroll and scrape"
 	},
+	"permissions": ["tabs"],
 	"icons": {
 		"16": "assets/toolbar-icon.png",
 		"48": "assets/toolbar-icon.png",
