@@ -1,5 +1,6 @@
 'use strict';
 
+// la sfarsitul partii de dev, poate in IIFE pt a nu polua global scope
 const selectors = {
 	feed: '._5pcb[aria-label="News Feed"][role="region"]',
 	posts: '._4-u2.mbm._4mrt._5jmm._5pat._5v3q._7cqq._4-u8',
@@ -15,6 +16,10 @@ const selectors = {
 // *lasa in continuare isActive, pentru a da toggle
 // in state 1 prop care tine "ultimul"(cel mai aproape de momentul curent) timestamp, dupa care calculezi conditia
 // daca nu exista un ultim timestamp(e prima oara cand dan scraping grupului), dai fallback spre {{ new Date().setDate(new Date().getDate() - 30) }}
+// ---
+// pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
+// log-uri mai peste tot, pentru a fi usor sa urmaresti evolutia algo
+
 const state = {
 	isActive: false,
 	scroll: {
