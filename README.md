@@ -7,5 +7,5 @@
 - [x] Figure out how to scrape a dynamic page
 - [x] Extend the func of that scroll button to scroll and scrape
 - [ ] Change the setInterval async logic of the algo to sync
-- [ ] Add the feature for the last post scraped or 30 days prios if it's the first time on that group
-- [ ] Add the feature to detect if the group's age is < 30 days
+- [ ] Add the feature for the last post scraped or x days prios if it's the first time on that group
+- [ ] Add the feature to detect if the group's age is < x days
