@@ -26,8 +26,8 @@ const selectors = {
 	comments: '._3hg-._42ft'
 };
 
-// pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
-// log-uri mai peste tot, pentru a fi usor sa urmaresti evolutia algo
+// Edge cases:
+// - pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
 
 const state = {
 	isActive: false,
@@ -50,6 +50,9 @@ function observeNewPosts(mutations) {
 	} else {
 		observer.disconnect();
 		stop();
+
+		// send new posts data combined with old posts ex: fetch -> post/put -> [...newPosts, ...oldPosts]
+		state.scrape.newPosts = [];
 	}
 }
 
@@ -134,8 +137,14 @@ async function startScrollingAndScrapping() {
 }
 
 function stop() {
+	if (!state.scrape.newPosts.length) {
+		console.log('Scroll and scrape: Already on last post');
+	} else {
+		state.lastTimestamp = state.scrape.newPosts[0].timestamp;
+	}
 	state.isActive = false;
 	console.log('Scroll and scrape: The execution finished');
+	console.log(state.scrape.newPosts);
 }
 
 async function wait(ms) {
@@ -182,7 +191,7 @@ function getTimestampFromDate(date) {
 
 function handleNewPosts(posts) {
 	for (let post of posts) {
-		if (post.timestamp < state.lastTimestamp) {
+		if (post.timestamp <= state.lastTimestamp) {
 			return false;
 		}
 
