@@ -26,19 +26,13 @@ const selectors = {
 	comments: '._3hg-._42ft'
 };
 
-// in loc de setInterval, incearca sa faci totul sincron(sa astepte dupa manipularea mutationRecords), cel mai probabil cu while(conditie), conditie pe care o vei schimba la sfarsitul while-ului, dupa manipularea de date(datele noi primite)
-// in state 1 prop cu conditia(boolean) - refresh
-// *lasa in continuare isActive, pentru a da toggle
-// in state 1 prop care tine "ultimul"(cel mai aproape de momentul curent) timestamp, dupa care calculezi conditia
-// daca nu exista un ultim timestamp(e prima oara cand dai scraping grupului), dai fallback spre {{ new Date().setDate(new Date().getDate() - 30) }}
-// ---
 // pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
 // log-uri mai peste tot, pentru a fi usor sa urmaresti evolutia algo
 
 const state = {
 	isActive: false,
-	refresh: false,
-	lastTimestamp: new Date().setDate(new Date().getDate() - 30),
+	shouldContinueScrolling: false,
+	lastTimestamp: new Date().setDate(new Date().getDate() - 5),
 	scrape: {
 		newPosts: [],
 		initialPosts: []
@@ -47,10 +41,16 @@ const state = {
 
 const observer = new MutationObserver(observeNewPosts);
 
-function observeNewPosts(mutationList) {
-	// state.scrape.data.mutationRecords;
-	// mutationList.forEach((mutation) => state.scrape.data.mutationRecords.push(mutation));
-	console.log(mutationList);
+function observeNewPosts(mutations) {
+	const posts = formatPosts(mutations[0].addedNodes);
+
+	state.shouldContinueScrolling = handleNewPosts(posts);
+	if (state.shouldContinueScrolling) {
+		scroll1Time();
+	} else {
+		observer.disconnect();
+		stop();
+	}
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -76,7 +76,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		if (state.isActive) {
 			console.log('Scroll and scrape: Already running');
 		} else {
-			BEGIN();
+			startScrollingAndScrapping();
 		}
 	} else {
 		console.log('Scroll and scrape: Unknown behavior');
@@ -90,7 +90,9 @@ function initializePosts(initialPosts) {
 	state.lastTimestamp = initialPosts[0].timestamp;
 }
 
-async function BEGIN() {
+async function startScrollingAndScrapping() {
+	console.log('Scroll and scrape: The execution started');
+
 	if (state.isActive) {
 		console.log('Scroll and scrape: Already running');
 		return;
@@ -111,31 +113,29 @@ async function BEGIN() {
 		}
 		return null;
 	})();
-
 	if (!feed) {
 		console.log("Scroll and scrape: Couldn't find the feed, reload the page and try again");
 
-		state.isActive = false;
+		stop();
 		return;
 	}
 
 	const preRenderedPosts = formatPosts(feed.querySelectorAll(selectors.posts));
-	for (let post of preRenderedPosts) {
-		// creeaza o functie care da check pe timestamp-uri
-		if (post.timestamp < state.lastTimestamp) {
-			state.isActive = false;
-			// return;
-		}
+	state.shouldContinueScrolling = handleNewPosts(preRenderedPosts);
+	if (!state.shouldContinueScrolling) {
+		stop();
+		return;
 	}
-	console.table(preRenderedPosts);
-	state.isActive = false;
-	// if (!scrape.observer) {
-	// 	scrape.data.posts = Array.from(feed.querySelectorAll(selectors.posts)).filter(
-	// 		(post) => post.id.split('_')[2][0] !== ':'
-	// 	);
 
-	// 	scrape.observer = new MutationObserver(observeNewPosts);
-	// }
+	observer.observe(feed, {
+		childList: true
+	});
+	scroll1Time();
+}
+
+function stop() {
+	state.isActive = false;
+	console.log('Scroll and scrape: The execution finished');
 }
 
 async function wait(ms) {
@@ -180,75 +180,20 @@ function getTimestampFromDate(date) {
 	return new Date(year, month, day, hour, minutes).getTime();
 }
 
-/* -------------
-	To be refactored/deleted
-   -------------*/
-
-function toggleScrollAndScrape(state) {
-	if (!state.isActive) {
-		start(state);
-	} else {
-		stop(state);
-	}
-}
-
-function start(state) {
-	state.isActive = true;
-	startScraping(state.scrape);
-	startScrolling(state.scroll);
-}
-
-function stop(state) {
-	state.isActive = false;
-	stopScrolling(state.scroll);
-	stopScraping(state.scrape);
-
-	formatMutationRecords(state.scrape.data);
-
-	console.log(state.scrape.data.posts);
-}
-
-function startScrolling(scroll) {
-	let scrollPosition = 0; // window.pageYOffset
-	scroll.interval = setInterval(() => {
-		if (scrollPosition < document.body.clientHeight - window.innerHeight) {
-			scrollPosition = document.body.clientHeight - window.innerHeight;
-			window.scroll({
-				top: scrollPosition
-			});
+function handleNewPosts(posts) {
+	for (let post of posts) {
+		if (post.timestamp < state.lastTimestamp) {
+			return false;
 		}
-	}, 100);
-}
 
-function stopScrolling(scroll) {
-	clearInterval(scroll.interval);
-	scroll.interval = null;
-}
-
-function startScraping(scrape) {
-	const feed = document.querySelector(selectors.feed);
-	if (!scrape.observer) {
-		scrape.data.posts = Array.from(feed.querySelectorAll(selectors.posts)).filter(
-			(post) => post.id.split('_')[2][0] !== ':'
-		);
-
-		scrape.observer = new MutationObserver(observeNewPosts);
+		state.scrape.newPosts.push(post);
 	}
+	return true;
+}
 
-	scrape.observer.observe(feed, {
-		childList: true
+function scroll1Time() {
+	console.log('Scroll and scrape: Scroll');
+	window.scroll({
+		top: document.body.clientHeight - window.innerHeight
 	});
-}
-
-function stopScraping(scrape) {
-	// const lastPendingMutations = scrape.observer.takeRecords(); // Not sure if this would work
-	scrape.observer.disconnect();
-}
-
-function formatMutationRecords(data) {
-	while (data.mutationRecords.length) {
-		data.mutationRecords[0].addedNodes.forEach((post) => data.posts.push(post));
-
-		data.mutationRecords.shift();
-	}
 }
