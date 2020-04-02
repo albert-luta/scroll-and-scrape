@@ -7,7 +7,7 @@ A chrome extension that scrapes facebook groups for posts.
 -   Open [Chrome Extension Manager](chrome://extensions/)
 -   Activate **Developer mode** from the top-right corner
 -   Click on the 'Load unpacked' button in the top-left corner
--   Select src folder(from this repo folder lul)
+-   Select src folder(from this repo folder lul), a new extension with a scraper icon should appear(activate it, if is not)
 -   Try the extension on different sites(and watch the dev console) :)
 
 ## Usage:
