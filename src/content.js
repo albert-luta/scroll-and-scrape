@@ -1,6 +1,17 @@
 'use strict';
 
 // la sfarsitul partii de dev, poate in IIFE pt a nu polua global scope
+
+// Edge cases:
+// - pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
+
+// Bugs:
+// - lose initial posts, if it's on a fb group, but not chronological ordered(it gets redirected) => sol: receives a config object along with the message to start scraping
+
+/**
+ * Contains the month names, used to get the index of the month
+ * @type {Array<String>}
+ */
 const monthNames = [
 	'january',
 	'february',
@@ -16,6 +27,10 @@ const monthNames = [
 	'december'
 ];
 
+/**
+ * Contains all the selectors used for scraping
+ * @type {Object.<String, String>}
+ */
 const selectors = {
 	feed: '._5pcb[aria-label="News Feed"][role="region"]',
 	posts: '._4-u2.mbm._4mrt._5jmm._5pat._5v3q._7cqq._4-u8',
@@ -26,9 +41,16 @@ const selectors = {
 	comments: '._3hg-._42ft'
 };
 
-// Edge cases:
-// - pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
-
+/**
+ * The state of the script
+ * @type {Object}
+ * @property {Boolean} isActive - Denotes the state of the scraping; if it has already started, it would ignore all other events; it cannot be stopped
+ * @property {Boolean} shouldContinueScrolling - Indicates if another scroll is required(if the timestamp of our last new post is < newest old post)
+ * @property {Timestamp} lastTimestamp - The timestamp which indicates the stopping point of the scraping(newest old post|some number of days in the past)
+ * @property {Object} scrape - The data about scraping
+ * @property {Array<Object>} scrape.newPosts - The new posts received from (current)scraping, initially empty
+ * @property {Array<Object>} scrape.initialPosts - The old posts from the current group
+ */
 const state = {
 	isActive: false,
 	shouldContinueScrolling: false,
@@ -39,8 +61,16 @@ const state = {
 	}
 };
 
+/**
+ * Observes the changes in the dom, used to detect posts additions
+ * @type {Object}
+ */
 const observer = new MutationObserver(observeNewPosts);
 
+/**
+ * Handles changes observed by the observer, used to format the new posts and add them into the state.scrape.newPosts array
+ * @param {Array<MutationRecord>} mutations - All the changes
+ */
 function observeNewPosts(mutations) {
 	const posts = formatPosts(mutations[0].addedNodes);
 
@@ -52,20 +82,28 @@ function observeNewPosts(mutations) {
 		stop();
 
 		// send new posts data combined with old posts ex: fetch -> post/put -> [...newPosts, ...oldPosts]
-		state.scrape.newPosts = [];
+		state.scrape.newPosts = []; // Clear the array, after stop() updates the state.lastTimestamp
 	}
 }
 
+/**
+ * Listens for all the possible messages from popup/background scripts; contains some error handling(just logs)
+ */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+	// Receives an error and logs it
 	if (request.error) {
 		console.log('Scroll and scrape:', request.error);
-	} else if (request.initialPosts) {
+	}
+	// Initialize state.scrape.initialPosts with the ones received from the server
+	else if (request.initialPosts) {
 		if (state.isActive) {
 			console.log('Scroll and scrape: Cannot set the initial posts while scraping');
 		} else {
 			initializePosts(request.initialPosts);
 		}
-	} else if (request.daysToScrape) {
+	}
+	// If there are no initial posts, receives the number of days to scrape and updates state.lastTimestamp
+	else if (request.daysToScrape) {
 		if (state.isActive) {
 			console.log('Scroll and scrape: Cannot update days to scrape while scraping');
 		} else if (state.scrape.initialPosts.length) {
@@ -75,17 +113,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		} else {
 			state.lastTimestamp = new Date().setDate(new Date().getDate() - request.daysToScrape);
 		}
-	} else if (request.startScraping) {
+	}
+	// Receives the message to start scraping
+	else if (request.startScraping) {
 		if (state.isActive) {
 			console.log('Scroll and scrape: Already running');
 		} else {
 			startScrollingAndScrapping();
 		}
-	} else {
+	}
+	// Fallback, if it doesn't recognize the message
+	else {
 		console.log('Scroll and scrape: Unknown behavior');
 	}
 });
 
+/**
+ * Initialize state.scrape.intialPosts with the old posts and update state.lastTimestamp
+ * @param {Array<Object>} initialPosts - The initial posts received from the server
+ */
 function initializePosts(initialPosts) {
 	if (!initialPosts.length) return;
 
@@ -93,15 +139,20 @@ function initializePosts(initialPosts) {
 	state.lastTimestamp = initialPosts[0].timestamp;
 }
 
+/**
+ * Starts the scraping process and cotrols the flow(error/edge case handling); most important function
+ */
 async function startScrollingAndScrapping() {
 	console.log('Scroll and scrape: The execution started');
 
+	// Checks to is if the scraping is already running
 	if (state.isActive) {
 		console.log('Scroll and scrape: Already running');
 		return;
 	}
 	state.isActive = true;
 
+	// If it cannot find the feed element(most important one), tries for 2 more times
 	const feed = await (async () => {
 		let maxTries = 3;
 		while (maxTries) {
@@ -123,6 +174,7 @@ async function startScrollingAndScrapping() {
 		return;
 	}
 
+	// Gets the already rendered posts and checks to see it is needed to load new ones
 	const preRenderedPosts = formatPosts(feed.querySelectorAll(selectors.posts));
 	state.shouldContinueScrolling = handleNewPosts(preRenderedPosts);
 	if (!state.shouldContinueScrolling) {
@@ -130,12 +182,16 @@ async function startScrollingAndScrapping() {
 		return;
 	}
 
+	// Sets the observer and scroll 1 time, to get observer's handler going
 	observer.observe(feed, {
 		childList: true
 	});
 	scroll1Time();
 }
 
+/**
+ * Run de directives needed at the end of the scraping process, more like a script than a traditional 'function'
+ */
 function stop() {
 	if (!state.scrape.newPosts.length) {
 		console.log('Scroll and scrape: Already on last post');
@@ -147,34 +203,52 @@ function stop() {
 	console.log(state.scrape.newPosts);
 }
 
+/**
+ * Async waits a number of milliseconds
+ * @param {Number} ms - Number of milliseconds to wait
+ * @returns {Promise}
+ */
 async function wait(ms) {
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
 }
 
+/**
+ * Receives a nodelist, transforms it into an array and for each node extracts the data needed
+ * @param {NodeList} posts - NodeList to format
+ * @returns {Array<Object>} Formatted posts
+ */
 function formatPosts(posts) {
-	return Array.from(posts)
-		.filter((post) => post.id.split('_')[2][0] !== ':')
-		.map((post) => {
-			const timestamp = getTimestampFromDate(
-				post.querySelector(selectors.date).parentNode.getAttribute('title')
-			);
-			const author = post.querySelector(selectors.author).textContent;
-			const text = post.querySelector(selectors.text)
-				? post.querySelector(selectors.text).textContent
-				: '';
-			const likes = post.querySelector(selectors.likes)
-				? parseInt(post.querySelector(selectors.likes).textContent)
-				: 0;
-			const comments = post.querySelector(selectors.comments)
-				? parseInt(post.querySelector(selectors.comments).textContent.split(' ')[0])
-				: 0;
+	return (
+		Array.from(posts)
+			// Filter for non-post elements
+			.filter((post) => post.id.split('_')[2][0] !== ':')
+			.map((post) => {
+				const timestamp = getTimestampFromDate(
+					post.querySelector(selectors.date).parentNode.getAttribute('title')
+				);
+				const author = post.querySelector(selectors.author).textContent;
+				const text = post.querySelector(selectors.text)
+					? post.querySelector(selectors.text).textContent
+					: '';
+				const likes = post.querySelector(selectors.likes)
+					? parseInt(post.querySelector(selectors.likes).textContent)
+					: 0;
+				const comments = post.querySelector(selectors.comments)
+					? parseInt(post.querySelector(selectors.comments).textContent.split(' ')[0])
+					: 0;
 
-			return { timestamp, author, text, likes, comments };
-		});
+				return { timestamp, author, text, likes, comments };
+			})
+	);
 }
 
+/**
+ * Receives a string date and returns it's timestamp
+ * @param {String} date - The string date
+ * @returns {Timestamp} Timestamp from the string date
+ */
 function getTimestampFromDate(date) {
 	const [, importantPart] = date.split(', ');
 	let [day, month, year, , time] = importantPart.split(' ');
@@ -189,6 +263,11 @@ function getTimestampFromDate(date) {
 	return new Date(year, month, day, hour, minutes).getTime();
 }
 
+/**
+ * Receives an array of posts(already formatted) and checks the timestamp of each post to be < state.lastTimestamp
+ * @param {Array<Object>} posts - The new posts received from the observer
+ * @returns {Boolean} Indicates if the scrolling should continue(load new posts) or not
+ */
 function handleNewPosts(posts) {
 	for (let post of posts) {
 		if (post.timestamp <= state.lastTimestamp) {
@@ -200,6 +279,9 @@ function handleNewPosts(posts) {
 	return true;
 }
 
+/**
+ * Move the window to the end of the page to load new posts
+ */
 function scroll1Time() {
 	console.log('Scroll and scrape: Scroll');
 	window.scroll({
