@@ -293,10 +293,10 @@ function formatPosts(posts) {
 			comments = parseInt(comments[0].textContent.split(' ')[0]);
 			// The comments text always starts with the number and the 'seen by x' text always starts with 'seen'
 			if (Number.isNaN(comments)) {
-				comments = null;
+				comments = 0;
 			}
 		} else {
-			comments = null;
+			comments = 0;
 		}
 
 		return { linkToPost, timestamp, linkToAuthor, author, message, likes, comments };
