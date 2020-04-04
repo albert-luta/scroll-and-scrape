@@ -85,7 +85,7 @@ const selectors = {
 const state = {
 	isActive: false,
 	shouldContinueScrolling: false,
-	lastTimestamp: new Date().setDate(new Date().getDate() - 5),
+	lastTimestamp: new Date().setDate(new Date().getDate() - 30),
 	scrape: {
 		newPosts: [],
 		initialPosts: [],
@@ -103,9 +103,14 @@ const observer = new MutationObserver(observeNewPosts);
  * @param {Array<MutationRecord>} mutations - All the changes
  */
 function observeNewPosts(mutations) {
-	const posts = formatPosts(mutations[0].addedNodes);
+	const posts = Array.from(mutations).reduce(
+		(acc, curr) => [...acc, ...formatPosts(curr.addedNodes)],
+		[]
+	);
 
 	state.shouldContinueScrolling = handleNewPosts(posts);
+	if (state.shouldContinueScrolling) console.log('Missing posts:', checkMissingPosts());
+
 	if (state.shouldContinueScrolling) {
 		scroll1Time();
 	} else {
@@ -442,11 +447,19 @@ function scroll1Time() {
 	});
 }
 
+// Just for testing if there are any missing posts each iteration
+function checkMissingPosts() {
+	return (
+		state.scrape.newPosts.length !==
+		document.querySelector(selectors.feed).querySelectorAll(selectors.post).length
+	);
+}
+
 /**
  * Returns the number of posts currently present in the dom
  * @param {HTMLElement} feed - The feed element which contains all the posts
  * @returns {Number}
  */
 function getNumberOfPostsRendered(feed) {
-	return feed.querySelectorAll(selectors.posts).length;
+	return feed.querySelectorAll(selectors.post).length;
 }
