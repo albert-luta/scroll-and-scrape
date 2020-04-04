@@ -4,7 +4,7 @@
 
 // Edge cases:
 // - pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
-// - format date fct sa primeasca o data > 1 an
+// - format date trb imbunatatit daca fb este in alta limba decat en
 // - you cannot change the sorting setting to "chronological" in public groups in which you are not a member
 
 // Bugs:
@@ -57,8 +57,9 @@ const selectors = {
 	seeMore:
 		'.oajrlxb2.g5ia77u1.qu0x051f.esr5mh6w.e9989ue4.r7d6kgcz.rq0escxv.nhd2j8a9.nc684nl6.p7hjln8o.kvgmc6g5.cxmmr5t8.oygrvhab.hcukyx3x.jb3vyjys.rz4wbd8a.qt6c0cv9.a8nywdso.i1ao9s8h.esuyzwwr.f1sip0of.lzcic4wl.oo9gr5id.gpro0wi8.lrazzd5p', // Inside the message element
 	likes: '.stjgntxs.ni8dbmo4.p0l241xz.s70u1j17.ef36h4xz.csza95pw .l9j0dhe7 .pcp91wgn',
-	comments:
-		'.l9j0dhe7 .gtad4xkn .oi732d6d.ik7dh3pa.d2edcug0.qv66sw1b.c1et5uql.a8c37x1j.muag1w35.enqfppq2.jq4qci2q.a3bd9o3v.knj5qynh.m9osqain',
+	comments: '.l9j0dhe7 .gtad4xkn', // Can include both comments and 'seen by x' text | .bp9cbjyn.j83agx80.pfnyh3mw
+
+	// '.l9j0dhe7 .gtad4xkn .oi732d6d.ik7dh3pa.d2edcug0.qv66sw1b.c1et5uql.a8c37x1j.muag1w35.enqfppq2.jq4qci2q.a3bd9o3v.knj5qynh.m9osqain',
 
 	// Old facebook interface selectors
 	//	feed: '._5pcb[aria-label="News Feed"][role="region"]',
@@ -83,7 +84,7 @@ const selectors = {
 const state = {
 	isActive: false,
 	shouldContinueScrolling: false,
-	lastTimestamp: new Date().setDate(new Date().getDate() - 30),
+	lastTimestamp: new Date().setDate(new Date().getDate() - 5),
 	scrape: {
 		newPosts: [],
 		initialPosts: [],
@@ -278,9 +279,19 @@ function formatPosts(posts) {
 		const likes = post.querySelector(selectors.likes)
 			? parseInt(post.querySelector(selectors.likes).textContent)
 			: 0;
-		const comments = post.querySelector(selectors.comments)
-			? parseInt(post.querySelector(selectors.comments).textContent.split(' ')[0])
-			: 0;
+
+		// QuerySelectorAll, in case we have both comments text and 'seen by x' text
+		// The comments text is always the first(if it exists)
+		let comments = post.querySelectorAll(selectors.comments);
+		if (comments.length) {
+			comments = parseInt(comments[0].textContent.split(' ')[0]);
+			// The comments text always starts with the number and the 'seen by x' text always starts with 'seen'
+			if (Number.isNaN(comments)) {
+				comments = null;
+			}
+		} else {
+			comments = null;
+		}
 
 		return { linkToPost, timestamp, linkToAuthor, author, message, likes, comments };
 	});
@@ -327,15 +338,14 @@ function isShared(message) {
  * @returns {Timestamp} Timestamp from the string date
  */
 function getTimestampFromDate(date) {
-	date = date.toLocaleLowerCase();
+	date = date.toLocaleLowerCase().split(' ');
 	const currentDate = new Date();
 
 	const today = ['hr', 'hrs']; // Needs some adding for minutes and seconds, but couldn't find any posts that recent at this moment
-	const yesterday = 'yesterday';
 
 	// Post's age is less than 24h(today)
 	if (today.map((str) => date.includes(str)).some((bool) => bool)) {
-		let [hoursAgo] = date.split(' ');
+		let [hoursAgo] = date;
 
 		// Some checks for NaN
 		hoursAgo = parseInt(hoursAgo);
@@ -343,8 +353,8 @@ function getTimestampFromDate(date) {
 		return Date.now() - hoursAgo * MILLISECONDS_HOUR;
 	}
 	// Post's age is >=24h && <48h(yesterday)
-	else if (date.includes(yesterday)) {
-		const time = date.split(' ').pop();
+	else if (date.includes('yesterday')) {
+		const time = date.pop();
 		let [hours, minutes] = time.split(':');
 
 		// Some checks for NaN
@@ -359,18 +369,34 @@ function getTimestampFromDate(date) {
 			minutes
 		).getTime();
 	}
+	// From the past year
+	else if (date.length === 3) {
+		let [day, month, year] = date;
+
+		year = parseInt(year);
+		month = MONTH_NAMES.indexOf(month);
+		day = parseInt(day);
+
+		return new Date(year, month, day).getTime();
+	}
 	// Post's age is >=48 h(any other day)
 	else {
 		// Check for > 1 yo
 		// ----
-		let [day, month, , time] = date.split(' ');
-		let [hours, minutes] = time.split(':');
+		let day, month, time, hours, minutes;
+
+		[day, month, , time] = date;
+		if (!time) {
+			time = hours = minutes = null;
+		} else {
+			[hours, minutes] = time.split(':');
+			hours = parseInt(hours);
+			minutes = parseInt(minutes);
+		}
 
 		// Error handling(Nan, not a good month name)
 		month = MONTH_NAMES.indexOf(month);
 		day = parseInt(day);
-		hours = parseInt(hours);
-		minutes = parseInt(minutes);
 
 		return new Date(currentDate.getFullYear(), month, day, hours, minutes).getTime();
 	}
