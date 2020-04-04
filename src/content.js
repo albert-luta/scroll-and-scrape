@@ -4,15 +4,19 @@
 
 // Edge cases:
 // - pentru grupuri noi, care nu au inca 30 de zile de la infiintare, detecteaza cand esti la sfarsitul paginii si nu se mai transmit req pentru postari noi; o alternativa nu foarte buna e un setTimeout de cand ai ajuns la sfarsitul paginii
+// - format date fct sa primeasca o data > 1 an
+// - you cannot change the sorting setting to "chronological" in public groups in which you are not a member
 
 // Bugs:
 // - lose initial posts, if it's on a fb group, but not chronological ordered(it gets redirected) => sol: receives a config object along with the message to start scraping
+// - the message from each post is incomplete, it needs to press 'See more' and wait for the whole message to show up
+// - doesn't catch emojis inside the message(because they aren't there, but in the attr aria-label of some nested span)
 
 /**
  * Contains the month names, used to get the index of the month
  * @type {Array<String>}
  */
-const monthNames = [
+const MONTH_NAMES = [
 	'january',
 	'february',
 	'march',
@@ -24,21 +28,46 @@ const monthNames = [
 	'september',
 	'october',
 	'november',
-	'december'
+	'december',
 ];
+
+const MILLISECONDS_HOUR = 60 * 60 * 1000;
 
 /**
  * Contains all the selectors used for scraping
- * @type {Object.<String, String>}
+ * @type {Object}
  */
 const selectors = {
-	feed: '._5pcb[aria-label="News Feed"][role="region"]',
-	posts: '._4-u2.mbm._4mrt._5jmm._5pat._5v3q._7cqq._4-u8',
-	date: '._5ptz .timestampContent',
-	author: '.fwb a',
-	text: '._5pbx.userContent._3576',
-	likes: '._81hb',
-	comments: '._3hg-._42ft'
+	feed: '[role="feed"]',
+	post: '.sjgh65i0.l9j0dhe7.k4urcfbm.du4w35lb',
+	linkToPost:
+		'.oajrlxb2.g5ia77u1.qu0x051f.esr5mh6w.e9989ue4.r7d6kgcz.rq0escxv.nhd2j8a9.nc684nl6.p7hjln8o.kvgmc6g5.cxmmr5t8.oygrvhab.hcukyx3x.jb3vyjys.rz4wbd8a.qt6c0cv9.a8nywdso.i1ao9s8h.esuyzwwr.f1sip0of.lzcic4wl.gmql0nx0.gpro0wi8.b1v8xokw', // First span within also contains the date
+	linkToAuthor:
+		'.oajrlxb2.g5ia77u1.qu0x051f.esr5mh6w.e9989ue4.r7d6kgcz.rq0escxv.nhd2j8a9.nc684nl6.p7hjln8o.kvgmc6g5.cxmmr5t8.oygrvhab.hcukyx3x.jb3vyjys.rz4wbd8a.qt6c0cv9.a8nywdso.i1ao9s8h.esuyzwwr.f1sip0of.lzcic4wl.oo9gr5id.gpro0wi8.lrazzd5p', // First span within also contains the author
+	isShared: [
+		'.hqeojc4l',
+		'.l6v480f0.maa8sdkg.s1tcr66n.aypy0576.ue3kfks5.pw54ja7n.uo3d90p7.l82x9zwi.tvfksri0.ozuftl9m',
+	],
+	// Inside the post
+	message: {
+		justText: '.f530mmz5.b1v8xokw.o0t2es00.oo9gr5id',
+		general:
+			'.oi732d6d.ik7dh3pa.d2edcug0.qv66sw1b.c1et5uql.a8c37x1j.muag1w35.enqfppq2.jq4qci2q.a3bd9o3v.knj5qynh.oo9gr5id',
+	},
+	seeMore:
+		'.oajrlxb2.g5ia77u1.qu0x051f.esr5mh6w.e9989ue4.r7d6kgcz.rq0escxv.nhd2j8a9.nc684nl6.p7hjln8o.kvgmc6g5.cxmmr5t8.oygrvhab.hcukyx3x.jb3vyjys.rz4wbd8a.qt6c0cv9.a8nywdso.i1ao9s8h.esuyzwwr.f1sip0of.lzcic4wl.oo9gr5id.gpro0wi8.lrazzd5p', // Inside the message element
+	likes: '.stjgntxs.ni8dbmo4.p0l241xz.s70u1j17.ef36h4xz.csza95pw .l9j0dhe7 .pcp91wgn',
+	comments:
+		'.l9j0dhe7 .gtad4xkn .oi732d6d.ik7dh3pa.d2edcug0.qv66sw1b.c1et5uql.a8c37x1j.muag1w35.enqfppq2.jq4qci2q.a3bd9o3v.knj5qynh.m9osqain',
+
+	// Old facebook interface selectors
+	//	feed: '._5pcb[aria-label="News Feed"][role="region"]',
+	// 	posts: '._4-u2.mbm._4mrt._5jmm._5pat._5v3q._7cqq._4-u8',
+	// 	date: '._5ptz .timestampContent',
+	// 	author: '.fwb a',
+	// 	text: '._5pbx.userContent._3576',
+	// 	likes: '._81hb',
+	// 	comments: '._3hg-._42ft'
 };
 
 /**
@@ -54,11 +83,11 @@ const selectors = {
 const state = {
 	isActive: false,
 	shouldContinueScrolling: false,
-	lastTimestamp: new Date().setDate(new Date().getDate() - 5),
+	lastTimestamp: new Date().setDate(new Date().getDate() - 30),
 	scrape: {
 		newPosts: [],
-		initialPosts: []
-	}
+		initialPosts: [],
+	},
 };
 
 /**
@@ -154,11 +183,11 @@ async function startScrollingAndScrapping() {
 
 	// If it cannot find the feed element(most important one), tries for 2 more times
 	const feed = await (async () => {
-		let maxTries = 3;
+		let maxTries = 5;
 		while (maxTries) {
-			const temp = document.querySelector(selectors.feed);
-			if (temp) {
-				return temp;
+			const temp = document.querySelectorAll(selectors.feed);
+			if (temp.length) {
+				return temp[temp.length - 1];
 			} else {
 				console.log(`Scroll and scrape: Error locating the feed. Retry ${maxTries}...`);
 				maxTries--;
@@ -175,7 +204,7 @@ async function startScrollingAndScrapping() {
 	}
 
 	// Gets the already rendered posts and checks to see it is needed to load new ones
-	const preRenderedPosts = formatPosts(feed.querySelectorAll(selectors.posts));
+	const preRenderedPosts = formatPosts(feed.querySelectorAll(selectors.post));
 	state.shouldContinueScrolling = handleNewPosts(preRenderedPosts);
 	if (!state.shouldContinueScrolling) {
 		stop();
@@ -184,7 +213,7 @@ async function startScrollingAndScrapping() {
 
 	// Sets the observer and scroll 1 time, to get observer's handler going
 	observer.observe(feed, {
-		childList: true
+		childList: true,
 	});
 	scroll1Time();
 }
@@ -200,7 +229,7 @@ function stop() {
 	}
 	state.isActive = false;
 	console.log('Scroll and scrape: The execution finished');
-	console.log(state.scrape.newPosts);
+	console.table(state.scrape.newPosts);
 }
 
 /**
@@ -220,28 +249,76 @@ async function wait(ms) {
  * @returns {Array<Object>} Formatted posts
  */
 function formatPosts(posts) {
-	return (
-		Array.from(posts)
-			// Filter for non-post elements
-			.filter((post) => post.id.split('_')[2][0] !== ':')
-			.map((post) => {
-				const timestamp = getTimestampFromDate(
-					post.querySelector(selectors.date).parentNode.getAttribute('title')
-				);
-				const author = post.querySelector(selectors.author).textContent;
-				const text = post.querySelector(selectors.text)
-					? post.querySelector(selectors.text).textContent
-					: '';
-				const likes = post.querySelector(selectors.likes)
-					? parseInt(post.querySelector(selectors.likes).textContent)
-					: 0;
-				const comments = post.querySelector(selectors.comments)
-					? parseInt(post.querySelector(selectors.comments).textContent.split(' ')[0])
-					: 0;
+	return Array.from(posts).map((post) => {
+		const linkToPost = post.querySelector(selectors.linkToPost).getAttribute('href');
+		const timestamp = getTimestampFromDate(
+			post.querySelector(selectors.linkToPost).textContent
+		);
+		const linkToAuthor = post.querySelector(selectors.linkToAuthor).getAttribute('href');
+		const author = post.querySelector(selectors.linkToAuthor).textContent;
+		let message = post.querySelector(selectors.message.justText);
+		// Type of message: just text
+		if (message) {
+			message = message.textContent;
+		}
+		// Type of message: general
+		else {
+			message = post.querySelector(selectors.message.general);
+			if (message) {
+				// The post doesn't have a message(grabs incorrectly something else from the shared post)
+				if (isShared(message)) {
+					message = null;
+				}
+				// The post does have a message(grabs it correctly)
+				else {
+					message = message.textContent;
+				}
+			}
+		}
+		const likes = post.querySelector(selectors.likes)
+			? parseInt(post.querySelector(selectors.likes).textContent)
+			: 0;
+		const comments = post.querySelector(selectors.comments)
+			? parseInt(post.querySelector(selectors.comments).textContent.split(' ')[0])
+			: 0;
 
-				return { timestamp, author, text, likes, comments };
-			})
-	);
+		return { linkToPost, timestamp, linkToAuthor, author, message, likes, comments };
+	});
+
+	// Old facebook interface selectors
+	// return (
+	// 	Array.from(posts)
+	// 		// Filter for non-post elements
+	// 		.filter((post) => post.id.split('_')[2][0] !== ':')
+	// 		.map((post) => {
+	// 			const timestamp = getTimestampFromDate(
+	// 				post.querySelector(selectors.date).parentNode.getAttribute('title')
+	// 			);
+	// 			const author = post.querySelector(selectors.author).textContent;
+	// 			const text = post.querySelector(selectors.text)
+	// 				? post.querySelector(selectors.text).textContent
+	// 				: '';
+	// 			const likes = post.querySelector(selectors.likes)
+	// 				? parseInt(post.querySelector(selectors.likes).textContent)
+	// 				: 0;
+	// 			const comments = post.querySelector(selectors.comments)
+	// 				? parseInt(post.querySelector(selectors.comments).textContent.split(' ')[0])
+	// 				: 0;
+
+	// 			return { timestamp, author, text, likes, comments };
+	// 		})
+	// );
+}
+
+/**
+ * Checks to see if the current message is from a shared post(inside) or not
+ * @param {HTMLElement} message - The message you want to check
+ * @returns {Boolean}
+ */
+function isShared(message) {
+	return selectors.isShared
+		.map((selector) => message.closest(selector))
+		.some((el) => el !== null);
 }
 
 /**
@@ -250,17 +327,66 @@ function formatPosts(posts) {
  * @returns {Timestamp} Timestamp from the string date
  */
 function getTimestampFromDate(date) {
-	const [, importantPart] = date.split(', ');
-	let [day, month, year, , time] = importantPart.split(' ');
-	let [hour, minutes] = time.split(':');
+	date = date.toLocaleLowerCase();
+	const currentDate = new Date();
 
-	year = parseInt(year);
-	month = monthNames.indexOf(month.toLowerCase());
-	day = parseInt(day);
-	hour = parseInt(hour);
-	minutes = parseInt(minutes);
+	const today = ['hr', 'hrs']; // Needs some adding for minutes and seconds, but couldn't find any posts that recent at this moment
+	const yesterday = 'yesterday';
 
-	return new Date(year, month, day, hour, minutes).getTime();
+	// Post's age is less than 24h(today)
+	if (today.map((str) => date.includes(str)).some((bool) => bool)) {
+		let [hoursAgo] = date.split(' ');
+
+		// Some checks for NaN
+		hoursAgo = parseInt(hoursAgo);
+
+		return Date.now() - hoursAgo * MILLISECONDS_HOUR;
+	}
+	// Post's age is >=24h && <48h(yesterday)
+	else if (date.includes(yesterday)) {
+		const time = date.split(' ').pop();
+		let [hours, minutes] = time.split(':');
+
+		// Some checks for NaN
+		hours = parseInt(hours);
+		minutes = parseInt(minutes);
+
+		return new Date(
+			currentDate.getFullYear(),
+			currentDate.getMonth(),
+			currentDate.getDate() - 1,
+			hours,
+			minutes
+		).getTime();
+	}
+	// Post's age is >=48 h(any other day)
+	else {
+		// Check for > 1 yo
+		// ----
+		let [day, month, , time] = date.split(' ');
+		let [hours, minutes] = time.split(':');
+
+		// Error handling(Nan, not a good month name)
+		month = MONTH_NAMES.indexOf(month);
+		day = parseInt(day);
+		hours = parseInt(hours);
+		minutes = parseInt(minutes);
+
+		return new Date(currentDate.getFullYear(), month, day, hours, minutes).getTime();
+	}
+
+	// Old facebook interface formatting
+	// const [, importantPart] = date.split(', ');
+	// let [day, month, year, , time] = importantPart.split(' ');
+	// let [hour, minutes] = time.split(':');
+
+	// year = parseInt(year);
+	// month = MONTH_NAMES.indexOf(month.toLowerCase());
+	// day = parseInt(day);
+	// hour = parseInt(hour);
+	// minutes = parseInt(minutes);
+
+	// return new Date(year, month, day, hour, minutes).getTime();
 }
 
 /**
@@ -285,6 +411,6 @@ function handleNewPosts(posts) {
 function scroll1Time() {
 	console.log('Scroll and scrape: Scroll');
 	window.scroll({
-		top: document.body.clientHeight - window.innerHeight
+		top: document.body.clientHeight - window.innerHeight,
 	});
 }
