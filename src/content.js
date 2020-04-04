@@ -31,6 +31,9 @@ const MONTH_NAMES = [
 	'december',
 ];
 
+/**
+ * Number of milliseconds in 1 hour
+ */
 const MILLISECONDS_HOUR = 60 * 60 * 1000;
 
 /**
@@ -57,9 +60,7 @@ const selectors = {
 	seeMore:
 		'.oajrlxb2.g5ia77u1.qu0x051f.esr5mh6w.e9989ue4.r7d6kgcz.rq0escxv.nhd2j8a9.nc684nl6.p7hjln8o.kvgmc6g5.cxmmr5t8.oygrvhab.hcukyx3x.jb3vyjys.rz4wbd8a.qt6c0cv9.a8nywdso.i1ao9s8h.esuyzwwr.f1sip0of.lzcic4wl.oo9gr5id.gpro0wi8.lrazzd5p', // Inside the message element
 	likes: '.stjgntxs.ni8dbmo4.p0l241xz.s70u1j17.ef36h4xz.csza95pw .l9j0dhe7 .pcp91wgn',
-	comments: '.l9j0dhe7 .gtad4xkn', // Can include both comments and 'seen by x' text | .bp9cbjyn.j83agx80.pfnyh3mw
-
-	// '.l9j0dhe7 .gtad4xkn .oi732d6d.ik7dh3pa.d2edcug0.qv66sw1b.c1et5uql.a8c37x1j.muag1w35.enqfppq2.jq4qci2q.a3bd9o3v.knj5qynh.m9osqain',
+	comments: '.l9j0dhe7 .gtad4xkn', // Can include both comments and 'seen by x' text
 
 	// Old facebook interface selectors
 	//	feed: '._5pcb[aria-label="News Feed"][role="region"]',
@@ -439,4 +440,13 @@ function scroll1Time() {
 	window.scroll({
 		top: document.body.clientHeight - window.innerHeight,
 	});
+}
+
+/**
+ * Returns the number of posts currently present in the dom
+ * @param {HTMLElement} feed - The feed element which contains all the posts
+ * @returns {Number}
+ */
+function getNumberOfPostsRendered(feed) {
+	return feed.querySelectorAll(selectors.posts).length;
 }
