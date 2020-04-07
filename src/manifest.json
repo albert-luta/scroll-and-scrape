@@ -4,8 +4,9 @@
 	"version": "0.1",
 	"content_scripts": [
 		{
-			"matches": ["<all_urls>"],
-			"js": ["content.js"]
+			"matches": ["https://www.facebook.com/groups/*"],
+			"js": ["content.js"],
+			"all_frames": true
 		}
 	],
 	"browser_action": {
@@ -13,7 +14,16 @@
 		"default_popup": "popup/index.html",
 		"default_title": "Scroll and scrape"
 	},
-	"permissions": ["tabs"],
+	"background": {
+		"page": "background/background.html",
+		"persistent": true
+	},
+	"permissions": [
+		"tabs",
+		"webRequest",
+		"webRequestBlocking",
+		"https://www.facebook.com/groups/*"
+	],
 	"icons": {
 		"16": "assets/toolbar-icon.png",
 		"48": "assets/toolbar-icon.png",
