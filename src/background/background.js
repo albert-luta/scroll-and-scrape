@@ -18,7 +18,14 @@ chrome.webRequest.onHeadersReceived.addListener(
 
 // ----------------------------
 
+const FB_GROUPS_PERIOD = 15;
+
 const iframe = document.querySelector('iframe');
 iframe.addEventListener('load', (e) => {
 	// Do stuff
+});
+
+chrome.alarms.create('fb-groups', { when: Date.now() + 100, periodInMinutes: FB_GROUPS_PERIOD });
+chrome.alarms.onAlarm.addListener((alarm) => {
+	if (alarm.name === 'fb-groups') console.log('fb-groups alarm');
 });

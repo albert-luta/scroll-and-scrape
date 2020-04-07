@@ -20,6 +20,7 @@
 	},
 	"permissions": [
 		"tabs",
+		"alarms",
 		"webRequest",
 		"webRequestBlocking",
 		"https://www.facebook.com/groups/*"
