@@ -85,7 +85,7 @@ const selectors = {
 const state = {
 	isActive: false,
 	shouldContinueScrolling: false,
-	lastTimestamp: new Date().setDate(new Date().getDate() - 30),
+	lastTimestamp: new Date().setDate(new Date().getDate() - 5),
 	scrape: {
 		newPosts: [],
 		initialPosts: [],
@@ -257,12 +257,14 @@ async function wait(ms) {
  */
 function formatPosts(posts) {
 	return Array.from(posts).map((post) => {
-		const linkToPost = post.querySelector(selectors.linkToPost).getAttribute('href');
-		const timestamp = getTimestampFromDate(
-			post.querySelector(selectors.linkToPost).textContent
-		);
-		const linkToAuthor = post.querySelector(selectors.linkToAuthor).getAttribute('href');
-		const author = post.querySelector(selectors.linkToAuthor).textContent;
+		const linkToPostElement = post.querySelector(selectors.linkToPost);
+		const linkToPost = linkToPostElement.href;
+		const timestamp = getTimestampFromDate(linkToPostElement.textContent);
+
+		const linkToAuthorElement = post.querySelector(selectors.linkToAuthor);
+		const linkToAuthor = linkToAuthorElement.href;
+		const author = linkToAuthorElement.textContent;
+
 		let message = post.querySelector(selectors.message.justText);
 		// Type of message: just text
 		if (message) {
@@ -282,9 +284,8 @@ function formatPosts(posts) {
 				}
 			}
 		}
-		const likes = post.querySelector(selectors.likes)
-			? parseInt(post.querySelector(selectors.likes).textContent)
-			: 0;
+		const likesElement = post.querySelector(selectors.likes);
+		const likes = likesElement ? parseInt(likesElement.textContent) : 0;
 
 		// QuerySelectorAll, in case we have both comments text and 'seen by x' text
 		// The comments text is always the first(if it exists)
