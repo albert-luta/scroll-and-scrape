@@ -4,14 +4,14 @@
 	"version": "0.1",
 	"content_scripts": [
 		{
-			"matches": ["https://www.facebook.com/groups/*"],
+			"matches": ["<all_urls>"],
 			"js": ["content.js"],
 			"all_frames": true
 		}
 	],
 	"browser_action": {
 		"default_icon": "assets/toolbar-icon.png",
-		"default_popup": "popup/index.html",
+		"default_popup": "popup/popup.html",
 		"default_title": "Scroll and scrape"
 	},
 	"background": {

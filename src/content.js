@@ -114,7 +114,7 @@ function observeNewPosts(mutations) {
 	if (state.shouldContinueScrolling) {
 		scroll1Time();
 	} else {
-		observer.disconnect();
+		// observer.disconnect();
 		stop();
 
 		// send new posts data combined with old posts ex: fetch -> post/put -> [...newPosts, ...oldPosts]
@@ -151,11 +151,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		}
 	}
 	// Receives the message to start scraping
-	else if (request.startScraping) {
+	else if (request.start) {
 		if (state.isActive) {
 			console.log('Scroll and scrape: Already running');
 		} else {
 			startScrollingAndScrapping();
+		}
+	}
+	// Receives the message to stop scraping
+	else if (request.stop) {
+		if (state.isActive) {
+			stop();
+		} else {
+			console.log('Scroll and scrape: Already stopped');
 		}
 	}
 	// Fallback, if it doesn't recognize the message
@@ -234,7 +242,11 @@ function stop() {
 	} else {
 		state.lastTimestamp = state.scrape.newPosts[0].timestamp;
 	}
+
 	state.isActive = false;
+	state.shouldContinueScrolling = false;
+	observer.disconnect();
+
 	console.log('Scroll and scrape: The execution finished');
 	console.table(state.scrape.newPosts);
 }
