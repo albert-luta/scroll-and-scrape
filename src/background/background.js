@@ -18,14 +18,17 @@
 
 // ----------------------------
 
-// const FB_GROUPS_PERIOD = 15;
+const FB_GROUPS_PERIOD_MINUTES = 1;
 
 // const iframe = document.querySelector('iframe');
 // iframe.addEventListener('load', (e) => {
 // 	// Do stuff
 // });
 
-// chrome.alarms.create('fb-groups', { when: Date.now() + 100, periodInMinutes: FB_GROUPS_PERIOD });
+// chrome.alarms.create('fb-groups', {
+// 	when: Date.now() + 100,
+// 	periodInMinutes: FB_GROUPS_PERIOD_MINUTES,
+// });
 // chrome.alarms.onAlarm.addListener((alarm) => {
 // 	if (alarm.name === 'fb-groups') console.log('fb-groups alarm');
 // });
@@ -35,11 +38,46 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	// Handles start and stop messages received from popup
 	if (request.start || request.stop) {
-		if (request.start) {
-			sendStartMessage();
-		} else {
-			sendStopMessage();
-		}
+		chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
+			// Checks to see if the active tab is on a facebook group
+			if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
+				const groupParam = getFbGroupParam(tabs[0].url);
+				const groupAlarmString = `fb-group_${groupParam}`;
+
+				if (request.start) {
+					chrome.alarms.get(groupAlarmString, (alarm) => {
+						if (alarm) {
+							console.log(`Alarm already exists on ${groupParam}`);
+							return;
+						}
+
+						chrome.alarms.create(groupAlarmString, {
+							when: Date.now(),
+							periodInMinutes: FB_GROUPS_PERIOD_MINUTES,
+						});
+						chrome.alarms.onAlarm.addListener((alarm) => {
+							if (alarm.name === groupAlarmString) {
+								console.log(`Alarm triggered on ${groupParam}`);
+
+								sendStartMessage(tabs, groupParam);
+							}
+						});
+					});
+
+					// sendStartMessage(tabs, groupParam);
+				} else if (request.stop) {
+					chrome.alarms.clear(groupAlarmString, () => {
+						console.log(`Alarm on ${groupParam} was cleared`);
+						sendStopMessage(tabs, groupParam);
+					});
+
+					// sendStopMessage(tabs, groupParam);
+				}
+			} else {
+				chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
+				console.log('Not a fb group');
+			}
+		});
 	}
 	// Handles the messages from content(with new posts data)
 	else if (request.groupParam) {
@@ -62,74 +100,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Send the message to the content to start the scraping
  */
-function sendStartMessage() {
-	chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-		// Checks to see if the active tab is on a facebook group
-		if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
-			// Initialize config options and localstorage to begin scraping a group
-			const groupParam = getFbGroupParam(tabs[0].url);
-			// Don't sent the start message if it's already running
-			if (isGroupAlreadyInScraping(groupParam)) {
-				console.log(`Scraping is already running on ${groupParam}, no messages were sent`);
-				return;
-			}
+function sendStartMessage(tabs, groupParam) {
+	// Don't sent the start message if it's already running
+	if (isGroupAlreadyInScraping(groupParam)) {
+		console.log(`Scraping is already running on ${groupParam}, no messages were sent`);
+		return;
+	}
 
-			setGroupScrapingActive(groupParam);
-			const lastTimestamp = getLastTimestamp(groupParam);
-			const options = { start: true, lastTimestamp, groupParam };
+	setGroupScrapingActive(groupParam);
+	const lastTimestamp = getLastTimestamp(groupParam);
+	const options = { start: true, lastTimestamp, groupParam };
 
-			// Format to correct url(chronological ordered)
-			const url = formatUrl(tabs[0].url);
+	// Format to correct url(chronological ordered)
+	const url = formatUrl(tabs[0].url);
 
-			// Refresh the page and send the start message
-			chrome.tabs.update(
-				tabs[0].id,
-				{
-					active: true,
-					url,
-				},
-				(tab) => {
-					// Waits for the page to load the initial render(and mainly the feed element)
-					chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-						if (tabId === tab.id && changeInfo.status === 'complete') {
-							// Removes the listener to not trigger on every page load, but only once
-							chrome.tabs.onUpdated.removeListener(listener);
+	// Refresh the page and send the start message
+	chrome.tabs.update(
+		tabs[0].id,
+		{
+			active: true,
+			url,
+		},
+		(tab) => {
+			// Waits for the page to load the initial render(and mainly the feed element)
+			chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+				if (tabId === tab.id && changeInfo.status === 'complete') {
+					// Removes the listener to not trigger on every page load, but only once
+					chrome.tabs.onUpdated.removeListener(listener);
 
-							chrome.tabs.sendMessage(tabId, options);
-							console.log('Start scraping message was sent');
-						}
-					});
+					chrome.tabs.sendMessage(tabId, options);
+					console.log('Start scraping message was sent');
 				}
-			);
-		} else {
-			chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
-			console.log('Not a fb group');
+			});
 		}
-	});
+	);
 }
 
 /**
  * Send the message to the content to stop the scraping
  */
-function sendStopMessage() {
-	chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-		// Checks to see if the active tab is on a facebook group
-		if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
-			const groupParam = getFbGroupParam(tabs[0].url);
-			if (!isGroupAlreadyInScraping(groupParam)) {
-				console.log(`Scraping is already stopped on ${groupParam}, no messages were sent`);
-				return;
-			}
+function sendStopMessage(tabs, groupParam) {
+	if (!isGroupAlreadyInScraping(groupParam)) {
+		console.log(`Scraping is already stopped on ${groupParam}, no messages were sent`);
+		return;
+	}
 
-			setGroupScrapingInactive(groupParam);
+	setGroupScrapingInactive(groupParam);
 
-			chrome.tabs.sendMessage(tabs[0].id, { stop: true });
-			console.log('Stop scraping message was sent');
-		} else {
-			chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
-			console.log('Not a fb group');
-		}
-	});
+	chrome.tabs.sendMessage(tabs[0].id, { stop: true });
+	console.log('Stop scraping message was sent');
 }
 
 /**
@@ -205,9 +224,13 @@ function updateGroupPosts(group, newPosts) {
 		if (isTheSamePost(newPosts[newPosts.length - 1], oldPosts[0])) newPosts.pop();
 
 		localStorage.setItem(groupPostsString, JSON.stringify([...newPosts, ...oldPosts]));
-		console.log(`${group}'s posts were updated with:`);
-		console.table(newPosts);
 	}
+
+	console.log(`${group}'s posts were updated with:`);
+	console.table(newPosts.length ? newPosts : null);
+
+	console.log(`${group}'s total posts are:`);
+	console.table(JSON.parse(localStorage.getItem(groupPostsString)));
 }
 
 /**
