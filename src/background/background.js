@@ -35,62 +35,100 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	// Handles start and stop messages received from popup
 	if (request.start || request.stop) {
-		chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-			// Checks to see if the active tab is on a facebook group
-			if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
-				// If the btn pressed was stop, don't redirect
-				if (request.stop) {
-					chrome.tabs.sendMessage(tabs[0].id, request);
-					return;
-				}
-
-				// Initialize config options and localstorage to begin scraping a group
-				const groupParam = getFbGroupParam(tabs[0].url);
-				if (isGroupAlreadyInScraping(groupParam)) return;
-
-				const lastTimestamp = getLastTimestamp(groupParam);
-				setGroupScrapingActive(groupParam);
-				const options = { ...request, lastTimestamp, groupParam };
-
-				// Checks to see if the group is set to show the posts in a chronological order
-				let url;
-				if (tabs[0].url.includes('sorting_setting=CHRONOLOGICAL')) {
-					url = tabs[0].url;
-				} else {
-					url = `${tabs[0].url}${
-						tabs[0].url.includes('?') ? '&' : '?'
-					}sorting_setting=CHRONOLOGICAL`;
-				}
-				chrome.tabs.update(
-					tabs[0].id,
-					{
-						active: true,
-						url,
-					},
-					(tab) => {
-						// Waits for the page to load the initial render(and mainly the feed element)
-						chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-							if (tabId === tab.id && changeInfo.status === 'complete') {
-								// Removes the listener to not trigger on every page load, but only once
-								chrome.tabs.onUpdated.removeListener(listener);
-								console.log('Start message sent');
-								chrome.tabs.sendMessage(tabId, options);
-							}
-						});
-					}
-				);
-			} else {
-				chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
-			}
-		});
+		if (request.start) {
+			sendStartMessage();
+		} else {
+			sendStopMessage();
+		}
 	}
 	// Handles the messages from content(with new posts data)
-	else if (request.groupParam && request.newPosts) {
+	else if (request.groupParam) {
 		const { groupParam, newPosts } = request;
+
 		setGroupScrapingInactive(groupParam);
-		updateGroupPosts(groupParam, newPosts);
+		if (newPosts) updateGroupPosts(groupParam, newPosts);
+	}
+	// Fallback, if it doesn't recognize the message
+	else {
+		console.log('Unknown behavior');
 	}
 });
+
+/**
+ * Send the message to the content to start the scraping
+ */
+function sendStartMessage() {
+	chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
+		// Checks to see if the active tab is on a facebook group
+		if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
+			// Initialize config options and localstorage to begin scraping a group
+			const groupParam = getFbGroupParam(tabs[0].url);
+			// Don't sent the start message if it's already running
+			if (isGroupAlreadyInScraping(groupParam)) return;
+
+			setGroupScrapingActive(groupParam);
+			const lastTimestamp = getLastTimestamp(groupParam);
+			const options = { start: true, lastTimestamp, groupParam };
+
+			// Format to correct url(chronological ordered)
+			const url = formatUrl(tabs[0].url);
+
+			// Refresh the page and send the start message
+			chrome.tabs.update(
+				tabs[0].id,
+				{
+					active: true,
+					url,
+				},
+				(tab) => {
+					// Waits for the page to load the initial render(and mainly the feed element)
+					chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+						if (tabId === tab.id && changeInfo.status === 'complete') {
+							// Removes the listener to not trigger on every page load, but only once
+							chrome.tabs.onUpdated.removeListener(listener);
+
+							chrome.tabs.sendMessage(tabId, options);
+						}
+					});
+				}
+			);
+		} else {
+			chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
+		}
+	});
+}
+
+/**
+ * Send the message to the content to stop the scraping
+ */
+function sendStopMessage() {
+	chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
+		// Checks to see if the active tab is on a facebook group
+		if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
+			const groupParam = getFbGroupParam(tabs[0].url);
+			if (!isGroupAlreadyInScraping(groupParam)) return;
+
+			setGroupScrapingInactive(groupParam);
+
+			chrome.tabs.sendMessage(tabs[0].id, { stop: true });
+		} else {
+			chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
+		}
+	});
+}
+
+/**
+ * Receives a fb group url and returns it formatted(chronological ordered)
+ * @param {String} url - The url string to be formatted
+ * @returns {String} The url formatted
+ */
+function formatUrl(url) {
+	if (url.includes('sorting_setting=CHRONOLOGICAL')) {
+		return url;
+	} else {
+		return `${url}${url.includes('?') ? '&' : '?'}sorting_setting=CHRONOLOGICAL`;
+	}
+}
 
 /**
  * Gets the fb group's unique param from an url
@@ -116,14 +154,27 @@ function getLastTimestamp(group) {
 	}
 }
 
+/**
+ * Sets the localstorage's isActive to true associated with that group
+ * @param {String} group - Fb group's param
+ */
 function setGroupScrapingActive(group) {
 	localStorage.setItem(`fb-group_${group}_isActive`, 'true');
 }
 
+/**
+ * Sets the localstorage's isActive to false associated with that group
+ * @param {String} group - Fb group's param
+ */
 function setGroupScrapingInactive(group) {
 	localStorage.setItem(`fb-group_${group}_isActive`, 'false');
 }
 
+/**
+ * Updates the localstorage with new posts
+ * @param {String} group - Fb group's param
+ * @param {Array<Object>} newPosts - The new posts received from scraping
+ */
 function updateGroupPosts(group, newPosts) {
 	if (!newPosts.length) return;
 
@@ -139,6 +190,12 @@ function updateGroupPosts(group, newPosts) {
 	}
 }
 
+/**
+ * Checks to see if it is the exact same post
+ * @param {Object} a - Post a
+ * @param {Object} b - Post b
+ * @returns {Boolean}
+ */
 // !!! Checks just shallow
 function isTheSamePost(a, b) {
 	if (Object.keys(a).length !== Object.keys(b).length) return false;
@@ -149,6 +206,12 @@ function isTheSamePost(a, b) {
 	return true;
 }
 
+/**
+ * Checks to see if 2 objects have the same keys(or 1 is included into another)
+ * @param {Object} a - Object a
+ * @param {Object} b - Object b
+ * @returns {Boolean}
+ */
 function checkSameKeys(a, b) {
 	// Object.keys arrays can be in different order
 	const keys1 = Object.keys(a).sort();
@@ -157,6 +220,11 @@ function checkSameKeys(a, b) {
 	return keys1.every((key, i) => key === keys2[i]);
 }
 
+/**
+ * Checks to see if the group is already in the scraping proces
+ * @param {String} group - Fb group's param
+ * @returns {Boolean}
+ */
 function isGroupAlreadyInScraping(group) {
 	return JSON.parse(localStorage.getItem(`fb-group_${group}_isActive`));
 }

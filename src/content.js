@@ -212,16 +212,19 @@ function stop() {
 
 	console.log('Scroll and scrape: The execution finished');
 
+	const { groupParam, newPosts } = state;
+
 	if (state.reachedTheLastPost) {
-		if (!state.newPosts.length) {
+		if (!newPosts.length) {
+			chrome.runtime.sendMessage({ groupParam, newPosts: null });
 			console.log('Scroll and scrape: Already on last post');
 		} else {
-			const { groupParam, newPosts } = state;
 			chrome.runtime.sendMessage({ groupParam, newPosts });
 
 			console.table(state.newPosts);
 		}
 	} else {
+		chrome.runtime.sendMessage({ groupParam, newPosts: null });
 		console.log(
 			"Scroll and scrape: Couldn't reach the last post, the new posts were discarded"
 		);
