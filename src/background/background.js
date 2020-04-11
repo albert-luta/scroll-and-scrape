@@ -46,7 +46,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		const { groupParam, newPosts } = request;
 
 		setGroupScrapingInactive(groupParam);
-		if (newPosts) updateGroupPosts(groupParam, newPosts);
+		if (newPosts) {
+			console.log(`${groupParam}: New posts received`);
+			updateGroupPosts(groupParam, newPosts);
+		} else {
+			console.log(`${groupParam}: No new posts received`);
+		}
 	}
 	// Fallback, if it doesn't recognize the message
 	else {
@@ -64,7 +69,10 @@ function sendStartMessage() {
 			// Initialize config options and localstorage to begin scraping a group
 			const groupParam = getFbGroupParam(tabs[0].url);
 			// Don't sent the start message if it's already running
-			if (isGroupAlreadyInScraping(groupParam)) return;
+			if (isGroupAlreadyInScraping(groupParam)) {
+				console.log(`Scraping is already running on ${groupParam}, no messages were sent`);
+				return;
+			}
 
 			setGroupScrapingActive(groupParam);
 			const lastTimestamp = getLastTimestamp(groupParam);
@@ -88,12 +96,14 @@ function sendStartMessage() {
 							chrome.tabs.onUpdated.removeListener(listener);
 
 							chrome.tabs.sendMessage(tabId, options);
+							console.log('Start scraping message was sent');
 						}
 					});
 				}
 			);
 		} else {
 			chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
+			console.log('Not a fb group');
 		}
 	});
 }
@@ -106,13 +116,18 @@ function sendStopMessage() {
 		// Checks to see if the active tab is on a facebook group
 		if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
 			const groupParam = getFbGroupParam(tabs[0].url);
-			if (!isGroupAlreadyInScraping(groupParam)) return;
+			if (!isGroupAlreadyInScraping(groupParam)) {
+				console.log(`Scraping is already stopped on ${groupParam}, no messages were sent`);
+				return;
+			}
 
 			setGroupScrapingInactive(groupParam);
 
 			chrome.tabs.sendMessage(tabs[0].id, { stop: true });
+			console.log('Stop scraping message was sent');
 		} else {
 			chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
+			console.log('Not a fb group');
 		}
 	});
 }
@@ -176,7 +191,10 @@ function setGroupScrapingInactive(group) {
  * @param {Array<Object>} newPosts - The new posts received from scraping
  */
 function updateGroupPosts(group, newPosts) {
-	if (!newPosts.length) return;
+	if (!newPosts.length) {
+		console.log(`${group}: Empty new posts`);
+		return;
+	}
 
 	const groupPostsString = `fb-group_${group}_posts`;
 	const oldPosts = JSON.parse(localStorage.getItem(groupPostsString));
@@ -187,6 +205,8 @@ function updateGroupPosts(group, newPosts) {
 		if (isTheSamePost(newPosts[newPosts.length - 1], oldPosts[0])) newPosts.pop();
 
 		localStorage.setItem(groupPostsString, JSON.stringify([...newPosts, ...oldPosts]));
+		console.log(`${group}'s posts were updated with:`);
+		console.table(newPosts);
 	}
 }
 
