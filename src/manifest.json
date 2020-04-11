@@ -21,6 +21,7 @@
 	"permissions": [
 		"tabs",
 		"alarms",
+		"storage",
 		"webRequest",
 		"webRequestBlocking",
 		"https://www.facebook.com/groups/*"

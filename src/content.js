@@ -75,21 +75,20 @@ const selectors = {
 /**
  * The state of the script
  * @type {Object}
+ * @property {String} groupParam - The fb group's unique param
  * @property {Boolean} isActive - Denotes the state of the scraping; if it has already started, it would ignore all other events; it cannot be stopped
  * @property {Boolean} shouldContinueScrolling - Indicates if another scroll is required(if the timestamp of our last new post is < newest old post)
+ * @property {Boolean} reachedTheLastPost - Indicates if the scraping reached the last post, if true -> the new posts are concatenated with the old ones, if false -> the new posts are discarded
  * @property {Timestamp} lastTimestamp - The timestamp which indicates the stopping point of the scraping(newest old post|some number of days in the past)
- * @property {Object} scrape - The data about scraping
- * @property {Array<Object>} scrape.newPosts - The new posts received from (current)scraping, initially empty
- * @property {Array<Object>} scrape.initialPosts - The old posts from the current group
+ * @property {Array<Object>} newPosts - The new posts received from (current)scraping, initially empty
  */
 const state = {
+	groupParam: null,
 	isActive: false,
 	shouldContinueScrolling: false,
-	lastTimestamp: new Date().setDate(new Date().getDate() - 5),
-	scrape: {
-		newPosts: [],
-		initialPosts: [],
-	},
+	reachedTheLastPost: false,
+	lastTimestamp: null,
+	newPosts: [],
 };
 
 /**
@@ -99,7 +98,7 @@ const state = {
 const observer = new MutationObserver(observeNewPosts);
 
 /**
- * Handles changes observed by the observer, used to format the new posts and add them into the state.scrape.newPosts array
+ * Handles changes observed by the observer, used to format the new posts and add them into the state.newPosts array
  * @param {Array<MutationRecord>} mutations - All the changes
  */
 function observeNewPosts(mutations) {
@@ -109,16 +108,13 @@ function observeNewPosts(mutations) {
 	);
 
 	state.shouldContinueScrolling = handleNewPosts(posts);
+	// Just for test, to see if it skips any posts
 	if (state.shouldContinueScrolling) console.log('Missing posts:', checkMissingPosts());
 
 	if (state.shouldContinueScrolling) {
 		scroll1Time();
 	} else {
-		// observer.disconnect();
 		stop();
-
-		// send new posts data combined with old posts ex: fetch -> post/put -> [...newPosts, ...oldPosts]
-		state.scrape.newPosts = []; // Clear the array, after stop() updates the state.lastTimestamp
 	}
 }
 
@@ -130,40 +126,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	if (request.error) {
 		console.log('Scroll and scrape:', request.error);
 	}
-	// Initialize state.scrape.initialPosts with the ones received from the server
-	else if (request.initialPosts) {
-		if (state.isActive) {
-			console.log('Scroll and scrape: Cannot set the initial posts while scraping');
-		} else {
-			initializePosts(request.initialPosts);
-		}
-	}
-	// If there are no initial posts, receives the number of days to scrape and updates state.lastTimestamp
-	else if (request.daysToScrape) {
-		if (state.isActive) {
-			console.log('Scroll and scrape: Cannot update days to scrape while scraping');
-		} else if (state.scrape.initialPosts.length) {
-			console.log(
-				'Scroll and scrape: Cannot update days to scrape after setting the initial posts'
-			);
-		} else {
-			state.lastTimestamp = new Date().setDate(new Date().getDate() - request.daysToScrape);
-		}
-	}
-	// Receives the message to start scraping
-	else if (request.start) {
-		if (state.isActive) {
-			console.log('Scroll and scrape: Already running');
-		} else {
-			startScrollingAndScrapping();
-		}
-	}
-	// Receives the message to stop scraping
+	// Receives the message to stop the scraping process, but loses the new posts scraped until then
 	else if (request.stop) {
 		if (state.isActive) {
 			stop();
 		} else {
 			console.log('Scroll and scrape: Already stopped');
+		}
+	}
+	// Receives the message to start the scraping process
+	else if (request.start) {
+		if (state.isActive) {
+			console.log('Scroll and scrape: Already running');
+		} else {
+			startScrollingAndScrapping(request.lastTimestamp, request.groupParam);
 		}
 	}
 	// Fallback, if it doesn't recognize the message
@@ -173,20 +149,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
- * Initialize state.scrape.intialPosts with the old posts and update state.lastTimestamp
- * @param {Array<Object>} initialPosts - The initial posts received from the server
- */
-function initializePosts(initialPosts) {
-	if (!initialPosts.length) return;
-
-	state.scrape.initialPosts = initialPosts;
-	state.lastTimestamp = initialPosts[0].timestamp;
-}
-
-/**
  * Starts the scraping process and cotrols the flow(error/edge case handling); most important function
  */
-async function startScrollingAndScrapping() {
+async function startScrollingAndScrapping(lastTimestamp, groupParam) {
 	console.log('Scroll and scrape: The execution started');
 
 	// Checks to is if the scraping is already running
@@ -195,6 +160,10 @@ async function startScrollingAndScrapping() {
 		return;
 	}
 	state.isActive = true;
+
+	// Initialize the state to begin scraping
+	state.groupParam = groupParam;
+	state.lastTimestamp = lastTimestamp;
 
 	// If it cannot find the feed element(most important one), tries for 2 more times
 	const feed = await (async () => {
@@ -217,7 +186,6 @@ async function startScrollingAndScrapping() {
 		stop();
 		return;
 	}
-
 	// Gets the already rendered posts and checks to see it is needed to load new ones
 	const preRenderedPosts = formatPosts(feed.querySelectorAll(selectors.post));
 	state.shouldContinueScrolling = handleNewPosts(preRenderedPosts);
@@ -237,18 +205,31 @@ async function startScrollingAndScrapping() {
  * Run de directives needed at the end of the scraping process, more like a script than a traditional 'function'
  */
 function stop() {
-	if (!state.scrape.newPosts.length) {
-		console.log('Scroll and scrape: Already on last post');
-	} else {
-		state.lastTimestamp = state.scrape.newPosts[0].timestamp;
-	}
-
 	state.isActive = false;
 	state.shouldContinueScrolling = false;
+	state.lastTimestamp = null;
 	observer.disconnect();
 
 	console.log('Scroll and scrape: The execution finished');
-	console.table(state.scrape.newPosts);
+
+	if (state.reachedTheLastPost) {
+		if (!state.newPosts.length) {
+			console.log('Scroll and scrape: Already on last post');
+		} else {
+			const { groupParam, newPosts } = state;
+			chrome.runtime.sendMessage({ groupParam, newPosts });
+
+			console.table(state.newPosts);
+		}
+	} else {
+		console.log(
+			"Scroll and scrape: Couldn't reach the last post, the new posts were discarded"
+		);
+	}
+
+	state.groupParam = null;
+	state.reachedTheLastPost = false;
+	state.newPosts = [];
 }
 
 /**
@@ -360,7 +341,7 @@ function getTimestampFromDate(date) {
 	date = date.toLocaleLowerCase().split(' ');
 	const currentDate = new Date();
 
-	const today = ['hr', 'hrs']; // Needs some adding for minutes and seconds, but couldn't find any posts that recent at this moment
+	const today = ['mins', 'hr', 'hrs']; // Needs some adding for minutes and seconds, but couldn't find any posts that recent at this moment
 
 	// Post's age is less than 24h(today)
 	if (today.map((str) => date.includes(str)).some((bool) => bool)) {
@@ -442,10 +423,11 @@ function getTimestampFromDate(date) {
 function handleNewPosts(posts) {
 	for (let post of posts) {
 		if (post.timestamp <= state.lastTimestamp) {
+			state.reachedTheLastPost = true;
 			return false;
 		}
 
-		state.scrape.newPosts.push(post);
+		state.newPosts.push(post);
 	}
 	return true;
 }
@@ -463,16 +445,7 @@ function scroll1Time() {
 // Just for testing if there are any missing posts each iteration
 function checkMissingPosts() {
 	return (
-		state.scrape.newPosts.length !==
+		state.newPosts.length !==
 		document.querySelector(selectors.feed).querySelectorAll(selectors.post).length
 	);
-}
-
-/**
- * Returns the number of posts currently present in the dom
- * @param {HTMLElement} feed - The feed element which contains all the posts
- * @returns {Number}
- */
-function getNumberOfPostsRendered(feed) {
-	return feed.querySelectorAll(selectors.post).length;
 }
