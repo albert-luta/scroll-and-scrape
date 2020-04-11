@@ -18,22 +18,14 @@
 
 // ----------------------------
 
-const FB_GROUPS_PERIOD_MINUTES = 1;
-
 // const iframe = document.querySelector('iframe');
 // iframe.addEventListener('load', (e) => {
 // 	// Do stuff
 // });
 
-// chrome.alarms.create('fb-groups', {
-// 	when: Date.now() + 100,
-// 	periodInMinutes: FB_GROUPS_PERIOD_MINUTES,
-// });
-// chrome.alarms.onAlarm.addListener((alarm) => {
-// 	if (alarm.name === 'fb-groups') console.log('fb-groups alarm');
-// });
-
 // ----------------------------
+
+const FB_GROUPS_PERIOD_MINUTES = 1;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	// Handles start and stop messages received from popup
@@ -46,6 +38,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 				if (request.start) {
 					chrome.alarms.get(groupAlarmString, (alarm) => {
+						// Don't create another alarm + listener if it already exists on a specific group
 						if (alarm) {
 							console.log(`Alarm already exists on ${groupParam}`);
 							return;
