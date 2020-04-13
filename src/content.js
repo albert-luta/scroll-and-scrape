@@ -128,7 +128,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	}
 	// Receives the message to stop the scraping process, but loses the new posts scraped until then
 	else if (request.stop) {
-		stop();
+		if (state.isActive) {
+			stop();
+		}
+
+		console.log('Scroll and scrape: The scraping process stopped');
 	}
 	// Receives the message to start the scraping process
 	else if (request.start) {
@@ -163,7 +167,7 @@ async function startScrollingAndScrapping(lastTimestamp, groupParam) {
 
 	// If it cannot find the feed element(most important one), tries for 2 more times
 	const feed = await (async () => {
-		let maxTries = 5;
+		let maxTries = 15;
 		while (maxTries) {
 			const temp = document.querySelectorAll(selectors.feed);
 			if (temp.length) {
@@ -177,9 +181,7 @@ async function startScrollingAndScrapping(lastTimestamp, groupParam) {
 		return null;
 	})();
 	if (!feed) {
-		console.log("Scroll and scrape: Couldn't find the feed, reload the page and try again");
-
-		stop();
+		stop(true);
 		return;
 	}
 	// Gets the already rendered posts and checks to see it is needed to load new ones
@@ -200,7 +202,7 @@ async function startScrollingAndScrapping(lastTimestamp, groupParam) {
 /**
  * Run de directives needed at the end of the scraping process, more like a script than a traditional 'function'
  */
-function stop() {
+function stop(couldntLocateFeed = false) {
 	state.isActive = false;
 	state.shouldContinueScrolling = false;
 	state.lastTimestamp = null;
@@ -210,20 +212,25 @@ function stop() {
 
 	const { groupParam, newPosts } = state;
 
-	if (state.reachedTheLastPost) {
-		if (!newPosts.length) {
-			chrome.runtime.sendMessage({ groupParam, newPosts: null });
-			console.log('Scroll and scrape: Already on last post');
-		} else {
-			chrome.runtime.sendMessage({ groupParam, newPosts });
-
-			console.table(state.newPosts);
-		}
+	if (couldntLocateFeed) {
+		chrome.runtime.sendMessage({ groupParam, couldntLocateFeed });
+		console.log("Scroll and scrape: Couldn't locate the feed, trying again...");
 	} else {
-		chrome.runtime.sendMessage({ groupParam, newPosts: null });
-		console.log(
-			"Scroll and scrape: Couldn't reach the last post, the new posts were discarded"
-		);
+		if (state.reachedTheLastPost) {
+			if (!newPosts.length) {
+				chrome.runtime.sendMessage({ groupParam, newPosts: null });
+				console.log('Scroll and scrape: Already on last post');
+			} else {
+				chrome.runtime.sendMessage({ groupParam, newPosts });
+
+				console.table(state.newPosts);
+			}
+		} else {
+			chrome.runtime.sendMessage({ groupParam, newPosts: null });
+			console.log(
+				"Scroll and scrape: Couldn't reach the last post, the new posts were discarded"
+			);
+		}
 	}
 
 	state.groupParam = null;

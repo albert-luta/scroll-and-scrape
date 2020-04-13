@@ -98,6 +98,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			console.log(`${groupParam}: No new posts received`);
 		}
 	}
+	// Handles the message from content(when it coudn't locate the feed element)
+	else if (request.couldntLocateFeed) {
+		console.log(`Couldn't locate the feed element for ${request.groupParam}`);
+	}
 	// Fallback, if it doesn't recognize the message
 	else {
 		console.log('Unknown behavior');
