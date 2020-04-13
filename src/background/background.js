@@ -39,7 +39,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			// Checks to see if the active tab is on a facebook group
 			if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
 				const groupParam = getFbGroupParam(tabs[0].url);
-				const groupAlarmString = `fb-group_${groupParam}`;
+				const groupAlarmString = `fb-group_${groupParam}_alarm`;
 
 				if (request.start) {
 					chrome.alarms.get(groupAlarmString, (alarm) => {
