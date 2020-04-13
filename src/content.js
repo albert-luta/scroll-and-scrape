@@ -79,16 +79,16 @@ const selectors = {
  * @property {Boolean} isActive - Denotes the state of the scraping; if it has already started, it would ignore all other events; it cannot be stopped
  * @property {Boolean} shouldContinueScrolling - Indicates if another scroll is required(if the timestamp of our last new post is < newest old post)
  * @property {Boolean} reachedTheLastPost - Indicates if the scraping reached the last post, if true -> the new posts are concatenated with the old ones, if false -> the new posts are discarded
- * @property {Timestamp} lastTimestamp - The timestamp which indicates the stopping point of the scraping(newest old post|some number of days in the past)
  * @property {Array<Object>} newPosts - The new posts received from (current)scraping, initially empty
+ * @property {Object} lastPost - The last post's details, to identify where the new posts should stop more precisely
  */
 const state = {
 	groupParam: null,
 	isActive: false,
 	shouldContinueScrolling: false,
 	reachedTheLastPost: false,
-	lastTimestamp: null,
 	newPosts: [],
+	lastPost: null,
 };
 
 /**
@@ -139,7 +139,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		if (state.isActive) {
 			console.log('Scroll and scrape: Already running');
 		} else {
-			startScrollingAndScrapping(request.lastTimestamp, request.groupParam);
+			startScrollingAndScrapping(request);
 		}
 	}
 	// Fallback, if it doesn't recognize the message
@@ -151,7 +151,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Starts the scraping process and cotrols the flow(error/edge case handling); most important function
  */
-async function startScrollingAndScrapping(lastTimestamp, groupParam) {
+async function startScrollingAndScrapping(request) {
 	console.log('Scroll and scrape: The execution started');
 
 	// Checks to is if the scraping is already running
@@ -162,8 +162,9 @@ async function startScrollingAndScrapping(lastTimestamp, groupParam) {
 	state.isActive = true;
 
 	// Initialize the state to begin scraping
+	const { groupParam, lastPost } = request;
 	state.groupParam = groupParam;
-	state.lastTimestamp = lastTimestamp;
+	state.lastPost = lastPost;
 
 	// If it cannot find the feed element(most important one), tries for 2 more times
 	const feed = await (async () => {
@@ -205,7 +206,7 @@ async function startScrollingAndScrapping(lastTimestamp, groupParam) {
 function stop(couldntLocateFeed = false) {
 	state.isActive = false;
 	state.shouldContinueScrolling = false;
-	state.lastTimestamp = null;
+	state.lastPost = null;
 	observer.disconnect();
 
 	console.log('Scroll and scrape: The execution finished');
@@ -422,13 +423,13 @@ function getTimestampFromDate(date) {
 }
 
 /**
- * Receives an array of posts(already formatted) and checks the timestamp of each post to be < state.lastTimestamp
+ * Receives an array of posts(already formatted) and checks the timestamp of each post to be < state.lastPost.timestamp
  * @param {Array<Object>} posts - The new posts received from the observer
  * @returns {Boolean} Indicates if the scrolling should continue(load new posts) or not
  */
 function handleNewPosts(posts) {
 	for (let post of posts) {
-		if (post.timestamp <= state.lastTimestamp) {
+		if (foundLastPost(post)) {
 			state.reachedTheLastPost = true;
 			return false;
 		}
@@ -436,6 +437,22 @@ function handleNewPosts(posts) {
 		state.newPosts.push(post);
 	}
 	return true;
+}
+
+/**
+ * Check for the last post, based on either just timestamp, if there are no previos posts for that group, or on timestamp
+ * @param {Object} post - Current post object to check
+ * @returns {Boolean} If it has found the last post
+ */
+function foundLastPost(post) {
+	if (!state.lastPost.author) {
+		return Boolean(post.timestamp <= state.lastPost.timestamp);
+	} else {
+		return Boolean(
+			post.timestamp <= state.lastPost.timestamp ||
+				(post.author === state.lastPost.author && post.message === state.lastPost.message)
+		);
+	}
 }
 
 /**

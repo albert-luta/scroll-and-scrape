@@ -112,8 +112,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * Send the message to the content to start the scraping
  */
 function sendStartMessage(tabs, groupParam) {
-	const lastTimestamp = getLastTimestamp(groupParam);
-	const options = { start: true, lastTimestamp, groupParam };
+	const lastPost = getLastPost(groupParam);
+	const options = { start: true, groupParam, lastPost };
 
 	// Format to correct url(chronological ordered)
 	const url = formatUrl(tabs[0].url);
@@ -171,19 +171,27 @@ function getFbGroupParam(url) {
 }
 
 /**
- * Gets the newest timestamp of a specific group posts, if the group wasn't scraped yet, returns the timestamp of the last x day
+ * Gets the newest post of a specific group posts, if the group wasn't scraped yet, returns an obj with the timestamp set(last x day), but the others null
  * @param {String} group - Fb group's param
  * @param {Number} daysToScrape - If there are no previous posts, how many days to scrape the group in the past
- * @returns {Timestamp} The timestamp of the the newest post on a specific group
+ * @returns {Object} The last post info for that specific group
  */
-function getLastTimestamp(group, daysToScrape = 5) {
+function getLastPost(group, daysToScrape = 5) {
 	const data = JSON.parse(localStorage.getItem(`fb-group_${group}_posts`));
+	let lastPost;
+
 	if (!data) {
 		// If there is no record for a specific group, scrape the last x days
-		return new Date().setDate(new Date().getDate() - daysToScrape);
+		const timestamp = new Date().setDate(new Date().getDate() - daysToScrape);
+
+		lastPost = { timestamp, author: null, message: null };
 	} else {
-		return data[0].timestamp;
+		const { timestamp, author, message } = data[0];
+
+		lastPost = { timestamp, author, message };
 	}
+
+	return lastPost;
 }
 
 /**
@@ -203,48 +211,12 @@ function updateGroupPosts(group, newPosts) {
 	if (!oldPosts) {
 		localStorage.setItem(groupPostsString, JSON.stringify(newPosts));
 	} else {
-		if (isTheSamePost(newPosts[newPosts.length - 1], oldPosts[0])) newPosts.pop();
-
 		localStorage.setItem(groupPostsString, JSON.stringify([...newPosts, ...oldPosts]));
 	}
 
 	console.log(`${group}'s posts were updated with:`);
-	console.table(
-		newPosts.length
-			? newPosts
-			: 'There was just 1 post, which was discarded because was the same as the old newest post'
-	);
+	console.table(newPosts);
 
 	console.log(`${group}'s total posts are:`);
 	console.table(JSON.parse(localStorage.getItem(groupPostsString)));
-}
-
-/**
- * Checks to see if it is the exact same post
- * @param {Object} a - Post a
- * @param {Object} b - Post b
- * @returns {Boolean}
- */
-// !!! Checks just shallow
-function isTheSamePost(a, b) {
-	if (Object.keys(a).length !== Object.keys(b).length) return false;
-	if (!checkSameKeys(a, b)) return false;
-	// Just author and message(if it is not edited) can remain the same -> better would be to check the author and the timestamp to be close one to another
-	if (a.author !== b.author || a.message !== b.message) return false;
-
-	return true;
-}
-
-/**
- * Checks to see if 2 objects have the same keys(or 1 is included into another)
- * @param {Object} a - Object a
- * @param {Object} b - Object b
- * @returns {Boolean}
- */
-function checkSameKeys(a, b) {
-	// Object.keys arrays can be in different order
-	const keys1 = Object.keys(a).sort();
-	const keys2 = Object.keys(b).sort();
-
-	return keys1.every((key, i) => key === keys2[i]);
 }
