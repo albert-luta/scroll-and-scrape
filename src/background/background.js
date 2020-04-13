@@ -25,7 +25,12 @@
 
 // ----------------------------
 
-const FB_GROUPS_PERIOD_MINUTES = 1;
+const FB_GROUPS_PERIOD_MINUTES = 1.2;
+
+/**
+ * Stores the references of the alarms listeners
+ */
+const activeAlarmListeners = {};
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	// Handles start and stop messages received from popup
@@ -48,23 +53,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 							when: Date.now(),
 							periodInMinutes: FB_GROUPS_PERIOD_MINUTES,
 						});
-						chrome.alarms.onAlarm.addListener((alarm) => {
+						// Creates a new unique listener for that group's alarm, so you can reference it later, when you want to remove it along with the alarm
+						const alarmListener = (alarm) => {
 							if (alarm.name === groupAlarmString) {
 								console.log(`Alarm triggered on ${groupParam}`);
 
 								sendStartMessage(tabs, groupParam);
 							}
-						});
+						};
+						chrome.alarms.onAlarm.addListener(alarmListener);
+						activeAlarmListeners[groupAlarmString] = alarmListener;
 					});
-
-					// sendStartMessage(tabs, groupParam);
 				} else if (request.stop) {
-					chrome.alarms.clear(groupAlarmString, () => {
-						console.log(`Alarm on ${groupParam} was cleared`);
-						sendStopMessage(tabs, groupParam);
-					});
+					chrome.alarms.get(groupAlarmString, (alarm) => {
+						if (!alarm) {
+							console.log(`No alarm is set on ${groupParam}`);
+							return;
+						}
 
-					// sendStopMessage(tabs, groupParam);
+						chrome.alarms.clear(groupAlarmString, () => {
+							console.log(`Alarm on ${groupParam} was cleared`);
+							sendStopMessage(tabs, groupParam);
+						});
+						chrome.alarms.onAlarm.removeListener(
+							activeAlarmListeners[groupAlarmString]
+						);
+						delete activeAlarmListeners[groupAlarmString];
+					});
 				}
 			} else {
 				chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
@@ -76,7 +91,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	else if (request.groupParam) {
 		const { groupParam, newPosts } = request;
 
-		setGroupScrapingInactive(groupParam);
 		if (newPosts) {
 			console.log(`${groupParam}: New posts received`);
 			updateGroupPosts(groupParam, newPosts);
@@ -169,13 +183,14 @@ function getFbGroupParam(url) {
 /**
  * Gets the newest timestamp of a specific group posts, if the group wasn't scraped yet, returns the timestamp of the last x day
  * @param {String} group - Fb group's param
+ * @param {Number} daysToScrape - If there are no previous posts, how many days to scrape the group in the past
  * @returns {Timestamp} The timestamp of the the newest post on a specific group
  */
-function getLastTimestamp(group) {
+function getLastTimestamp(group, daysToScrape = 5) {
 	const data = JSON.parse(localStorage.getItem(`fb-group_${group}_posts`));
 	if (!data) {
 		// If there is no record for a specific group, scrape the last x days
-		return new Date().setDate(new Date().getDate() - 5);
+		return new Date().setDate(new Date().getDate() - daysToScrape);
 	} else {
 		return data[0].timestamp;
 	}
@@ -220,7 +235,11 @@ function updateGroupPosts(group, newPosts) {
 	}
 
 	console.log(`${group}'s posts were updated with:`);
-	console.table(newPosts.length ? newPosts : null);
+	console.table(
+		newPosts.length
+			? newPosts
+			: 'There was just 1 post, which was discarded because was the same as the old newest post'
+	);
 
 	console.log(`${group}'s total posts are:`);
 	console.table(JSON.parse(localStorage.getItem(groupPostsString)));
