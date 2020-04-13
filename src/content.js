@@ -128,11 +128,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	}
 	// Receives the message to stop the scraping process, but loses the new posts scraped until then
 	else if (request.stop) {
-		if (state.isActive) {
-			stop();
-		} else {
-			console.log('Scroll and scrape: Already stopped');
-		}
+		stop();
 	}
 	// Receives the message to start the scraping process
 	else if (request.start) {

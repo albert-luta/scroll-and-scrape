@@ -25,7 +25,7 @@
 
 // ----------------------------
 
-const FB_GROUPS_PERIOD_MINUTES = 1.2;
+const FB_GROUPS_PERIOD_MINUTES = 1;
 
 /**
  * Stores the references of the alarms listeners
@@ -73,7 +73,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 						chrome.alarms.clear(groupAlarmString, () => {
 							console.log(`Alarm on ${groupParam} was cleared`);
-							sendStopMessage(tabs, groupParam);
+							sendStopMessage(tabs);
 						});
 						chrome.alarms.onAlarm.removeListener(
 							activeAlarmListeners[groupAlarmString]
@@ -108,13 +108,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * Send the message to the content to start the scraping
  */
 function sendStartMessage(tabs, groupParam) {
-	// Don't sent the start message if it's already running
-	if (isGroupAlreadyInScraping(groupParam)) {
-		console.log(`Scraping is already running on ${groupParam}, no messages were sent`);
-		return;
-	}
-
-	setGroupScrapingActive(groupParam);
 	const lastTimestamp = getLastTimestamp(groupParam);
 	const options = { start: true, lastTimestamp, groupParam };
 
@@ -146,14 +139,7 @@ function sendStartMessage(tabs, groupParam) {
 /**
  * Send the message to the content to stop the scraping
  */
-function sendStopMessage(tabs, groupParam) {
-	if (!isGroupAlreadyInScraping(groupParam)) {
-		console.log(`Scraping is already stopped on ${groupParam}, no messages were sent`);
-		return;
-	}
-
-	setGroupScrapingInactive(groupParam);
-
+function sendStopMessage(tabs) {
 	chrome.tabs.sendMessage(tabs[0].id, { stop: true });
 	console.log('Stop scraping message was sent');
 }
@@ -194,22 +180,6 @@ function getLastTimestamp(group, daysToScrape = 5) {
 	} else {
 		return data[0].timestamp;
 	}
-}
-
-/**
- * Sets the localstorage's isActive to true associated with that group
- * @param {String} group - Fb group's param
- */
-function setGroupScrapingActive(group) {
-	localStorage.setItem(`fb-group_${group}_isActive`, 'true');
-}
-
-/**
- * Sets the localstorage's isActive to false associated with that group
- * @param {String} group - Fb group's param
- */
-function setGroupScrapingInactive(group) {
-	localStorage.setItem(`fb-group_${group}_isActive`, 'false');
 }
 
 /**
@@ -273,13 +243,4 @@ function checkSameKeys(a, b) {
 	const keys2 = Object.keys(b).sort();
 
 	return keys1.every((key, i) => key === keys2[i]);
-}
-
-/**
- * Checks to see if the group is already in the scraping proces
- * @param {String} group - Fb group's param
- * @returns {Boolean}
- */
-function isGroupAlreadyInScraping(group) {
-	return JSON.parse(localStorage.getItem(`fb-group_${group}_isActive`));
 }
