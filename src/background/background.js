@@ -25,6 +25,9 @@
 
 // ----------------------------
 
+/**
+ * The interval for the alarms(in minutes)
+ */
 const FB_GROUPS_PERIOD_MINUTES = 1;
 
 /**
