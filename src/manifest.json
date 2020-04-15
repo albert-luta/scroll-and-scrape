@@ -5,8 +5,7 @@
 	"content_scripts": [
 		{
 			"matches": ["<all_urls>"],
-			"js": ["content.js"],
-			"all_frames": true
+			"js": ["content.js"]
 		}
 	],
 	"browser_action": {
@@ -15,17 +14,10 @@
 		"default_title": "Scroll and scrape"
 	},
 	"background": {
-		"page": "background/background.html",
-		"persistent": true
+		"scripts": ["background.js"],
+		"persistent": false
 	},
-	"permissions": [
-		"tabs",
-		"alarms",
-		"storage",
-		"webRequest",
-		"webRequestBlocking",
-		"https://www.facebook.com/groups/*"
-	],
+	"permissions": ["tabs", "alarms"],
 	"icons": {
 		"16": "assets/toolbar-icon.png",
 		"48": "assets/toolbar-icon.png",
