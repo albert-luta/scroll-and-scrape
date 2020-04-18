@@ -8,6 +8,9 @@ const FB_GROUPS_PERIOD_MINUTES = 1;
  */
 const activeAlarmListeners = {};
 
+/**
+ * Listens for the popup messages
+ */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	// Handles start and stop messages received from popup
 	if (request.start || request.stop) {
