@@ -1,80 +1,108 @@
 /**
- * The interval for the alarms(in minutes)
+ * The interval for the scraping alarms (in minutes)
  */
 const FB_GROUPS_PERIOD_MINUTES = 1;
 
 /**
- * Stores the references of the alarms listeners
+ * Urls of the groups to scrape; should be initialized, but NOT changed afterwards
  */
-const activeAlarmListeners = {};
+const groupsUrls = ['https://www.facebook.com/groups/alljavascript?sorting_setting=CHRONOLOGICAL'];
 
 /**
- * Listens for the popup messages
+ * The minimized window in which all groups are loaded in different tabs
+ */
+let scraperWindowId = null;
+
+/**
+ * Detects when the 'scraping' window closed, either by pressing the stop button, or all tabs finished scraping
+ */
+chrome.windows.onRemoved.addListener((removedWindowId) => {
+	if (scraperWindowId == null || removedWindowId !== scraperWindowId) return;
+
+	console.log(`Window closed with id: ${scraperWindowId}`);
+	scraperWindowId = null;
+});
+
+/**
+ * Listener for the scraping alarm
+ */
+chrome.alarms.onAlarm.addListener((alarm) => {
+	if (alarm.name !== 'fb-groups_alarm') return;
+
+	if (scraperWindowId != null) {
+		console.log('Window already opened, alarm is not triggered this time');
+		return;
+	}
+
+	console.log('Scraping alarm triggered');
+	chrome.windows.create(
+		{
+			url: groupsUrls,
+			state: 'minimized',
+		},
+		(window) => {
+			console.log(`Window created with id: ${window.id}`);
+			scraperWindowId = window.id;
+
+			window.tabs.forEach((tab) => {
+				sendStartMessage(tab);
+			});
+		}
+	);
+});
+
+/**
+ * Listens for the message from popup or content
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-	// Handles start and stop messages received from popup
-	if (request.start || request.stop) {
-		chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-			// Checks to see if the active tab is on a facebook group
-			if (tabs[0].url.startsWith('https://www.facebook.com/groups')) {
-				const groupParam = getFbGroupParam(tabs[0].url);
-				const groupAlarmString = `fb-group_${groupParam}_alarm`;
-
-				if (request.start) {
-					chrome.alarms.get(groupAlarmString, (alarm) => {
-						// Don't create another alarm + listener if it already exists on a specific group
-						if (alarm) {
-							console.log(`Alarm already exists on ${groupParam}`);
-							return;
-						}
-
-						chrome.alarms.create(groupAlarmString, {
-							when: Date.now(),
-							periodInMinutes: FB_GROUPS_PERIOD_MINUTES,
-						});
-						// Creates a new unique listener for that group's alarm, so you can reference it later, when you want to remove it along with the alarm
-						const alarmListener = (alarm) => {
-							if (alarm.name === groupAlarmString) {
-								console.log(`Alarm triggered on ${groupParam}`);
-
-								sendStartMessage(tabs, groupParam);
-							}
-						};
-						chrome.alarms.onAlarm.addListener(alarmListener);
-						activeAlarmListeners[groupAlarmString] = alarmListener;
-					});
-				} else if (request.stop) {
-					chrome.alarms.get(groupAlarmString, (alarm) => {
-						if (!alarm) {
-							console.log(`No alarm is set on ${groupParam}`);
-							return;
-						}
-
-						chrome.alarms.clear(groupAlarmString, () => {
-							console.log(`Alarm on ${groupParam} was cleared`);
-							sendStopMessage(tabs);
-						});
-						chrome.alarms.onAlarm.removeListener(
-							activeAlarmListeners[groupAlarmString]
-						);
-						delete activeAlarmListeners[groupAlarmString];
-					});
-				}
-			} else {
-				chrome.tabs.sendMessage(tabs[0].id, { error: 'This is not a facebook group' });
-				console.log('Not a fb group');
+	// Handles the message from popup to start scraping
+	if (request.start) {
+		chrome.alarms.get('fb-groups_alarm', (alarm) => {
+			if (alarm) {
+				console.log('Scraping is already active');
+				return;
 			}
+
+			console.log('Scraping started');
+
+			chrome.alarms.create('fb-groups_alarm', {
+				when: Date.now(),
+				periodInMinutes: FB_GROUPS_PERIOD_MINUTES,
+			});
+		});
+	}
+	// Handles the message from popup to stop scraping
+	else if (request.stop) {
+		chrome.alarms.get('fb-groups_alarm', (alarm) => {
+			if (!alarm) {
+				console.log('Scraping is already stopped');
+				return;
+			}
+
+			chrome.alarms.clear('fb-groups_alarm', () => {
+				console.log('Scraping alarm was cleared');
+
+				if (scraperWindowId != null) {
+					chrome.windows.remove(scraperWindowId);
+				}
+
+				console.log('Scraping stopped');
+			});
 		});
 	}
 	// Handles the messages from content(with new posts data)
 	else if (request.groupParam) {
 		const { groupParam, newPosts } = request;
 
+		chrome.tabs.remove(sender.tab.id, () => {
+			console.log(`Tab for ${groupParam} finished its job and was closed`);
+		});
+
 		if (newPosts) {
-			console.log(`${groupParam}: New posts received`);
+			console.log(`New posts received from ${groupParam}`);
 			updateGroupPosts(groupParam, newPosts);
 		} else {
-			console.log(`${groupParam}: No new posts received`);
+			console.log(`No new posts received from ${groupParam}`);
 		}
 	}
 	// Handles the message from content(when it coudn't locate the feed element)
@@ -89,42 +117,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 /**
  * Send the message to the content to start the scraping
+ * @param {Object} tab - The tab object with all the informations
  */
-function sendStartMessage(tabs, groupParam) {
+function sendStartMessage(tab) {
+	const groupParam = getFbGroupParam(tab.pendingUrl);
 	const lastPost = getLastPost(groupParam);
 	const options = { start: true, groupParam, lastPost };
 
 	// Format to correct url(chronological ordered)
-	const url = formatUrl(tabs[0].url);
+	const formattedUrl = formatUrl(tab.pendingUrl);
 
-	// Refresh the page and send the start message
-	chrome.tabs.update(
-		tabs[0].id,
-		{
-			active: true,
-			url,
-		},
-		(tab) => {
-			// Waits for the page to load the initial render(and mainly the feed element)
-			chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-				if (tabId === tab.id && changeInfo.status === 'complete') {
-					// Removes the listener to not trigger on every page load, but only once
-					chrome.tabs.onUpdated.removeListener(listener);
+	// The case when the page is not chronologicaly ordered
+	if (tab.pendingUrl !== formattedUrl) {
+		console.log(
+			`Need to update the url for the page to be chronologicaly ordered for ${tab.pendingUrl}`
+		);
 
-					chrome.tabs.sendMessage(tabId, options);
-					console.log('Start scraping message was sent');
-				}
-			});
-		}
-	);
-}
+		// Refresh the page and send the start message
+		chrome.tabs.update(
+			tab.id,
+			{
+				url: formattedUrl,
+			},
+			(tab) => {
+				// Waits for the page to load the initial render(and mainly the feed element)
+				chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+					if (tabId === tab.id && changeInfo.status === 'complete') {
+						// Removes the listener to not trigger on every page load, but only once
+						chrome.tabs.onUpdated.removeListener(listener);
 
-/**
- * Send the message to the content to stop the scraping
- */
-function sendStopMessage(tabs) {
-	chrome.tabs.sendMessage(tabs[0].id, { stop: true });
-	console.log('Stop scraping message was sent');
+						chrome.tabs.sendMessage(tabId, options);
+						console.log(`Start scraping message was sent to ${groupParam}`);
+					}
+				});
+			}
+		);
+	}
+	// The case when the page is chronologicaly ordered
+	else {
+		console.log(`Url is ok for the page to be chronologicaly ordered for ${tab.pendingUrl}`);
+
+		// Waits for the page to load the initial render(and mainly the feed element)
+		chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+			if (tabId === tab.id && changeInfo.status === 'complete') {
+				// Removes the listener to not trigger on every page load, but only once
+				chrome.tabs.onUpdated.removeListener(listener);
+
+				chrome.tabs.sendMessage(tabId, options);
+				console.log(`Start scraping message was sent to ${groupParam}`);
+			}
+		});
+	}
 }
 
 /**

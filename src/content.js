@@ -8,7 +8,6 @@
 // - you cannot change the sorting setting to "chronological" in public groups in which you are not a member
 
 // Bugs:
-// - lose initial posts, if it's on a fb group, but not chronological ordered(it gets redirected) => sol: receives a config object along with the message to start scraping
 // - the message from each post is incomplete, it needs to press 'See more' and wait for the whole message to show up
 // - doesn't catch emojis inside the message(because they aren't there, but in the attr aria-label of some nested span)
 
@@ -125,14 +124,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	// Receives an error and logs it
 	if (request.error) {
 		console.log('Scroll and scrape:', request.error);
-	}
-	// Receives the message to stop the scraping process, but loses the new posts scraped until then
-	else if (request.stop) {
-		if (state.isActive) {
-			stop();
-		}
-
-		console.log('Scroll and scrape: The scraping process stopped');
 	}
 	// Receives the message to start the scraping process
 	else if (request.start) {
