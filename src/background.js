@@ -1,3 +1,5 @@
+// Instead of groupsUrls, we can modify it to groupsParams and just pass the params => make a function that constructs the url already chron ordered
+
 /**
  * The interval for the scraping alarms (in minutes)
  */
@@ -6,7 +8,10 @@ const FB_GROUPS_PERIOD_MINUTES = 1;
 /**
  * Urls of the groups to scrape; should be initialized, but NOT changed afterwards
  */
-const groupsUrls = ['https://www.facebook.com/groups/alljavascript?sorting_setting=CHRONOLOGICAL'];
+const groupsUrls = [
+	'https://www.facebook.com/groups/alljavascript?sorting_setting=CHRONOLOGICAL',
+	'https://www.facebook.com/groups/434902823744100',
+];
 
 /**
  * The minimized window in which all groups are loaded in different tabs
